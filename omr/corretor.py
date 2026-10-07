@@ -1,8 +1,22 @@
-import cv2
+import numpy as np
 
 
-def lerRespostas(imgTh, campos, resp, limiar=15, margem_dupla=8):
-    
+_MASCARAS = {}
+
+
+def _mascara_disco(lado):
+    """Disco inscrito no campo quadrado: ignora cantos e o anel impresso da bolha."""
+    if lado not in _MASCARAS:
+        r = lado / 2.0
+        yy, xx = np.ogrid[:lado, :lado]
+        _MASCARAS[lado] = (((yy - r + 0.5) ** 2 + (xx - r + 0.5) ** 2) <= r * r)
+    return _MASCARAS[lado]
+
+
+def lerRespostas(imgTh, campos, resp, limiar=45, margem_dupla=15):
+    """imgTh: imagem binária do canvas (tinta = 255). Cada campo é um quadrado (x, y, w, h)
+    centrado numa bolha; só o disco interno conta. percentuais = % de tinta no disco.
+    Uma bolha VAZIA já tem ~10-22% por causa da letra impressa; preenchida passa de ~80%."""
     resultado_por_questao = []
 
     for questao in range(10):
@@ -11,20 +25,17 @@ def lerRespostas(imgTh, campos, resp, limiar=15, margem_dupla=8):
         for alternativa in range(5):
             id_campo = questao * 5 + alternativa
             x, y, w, h = campos[id_campo]
-            campo = imgTh[y:y + h, x:x + w]
+            campo = imgTh[max(y, 0):y + h, max(x, 0):x + w]
 
-            if campo.size == 0:
+            if campo.shape != (h, w):          # campo cortado pela borda do canvas
                 percentuais.append(0.0)
                 continue
 
-            tamanho = campo.shape[0] * campo.shape[1]
-            pretos = cv2.countNonZero(campo)
-            percentual = round((pretos / tamanho) * 100, 2)
+            disco = _mascara_disco(w)
+            percentual = round(float((campo[disco] > 0).mean()) * 100, 2)
             percentuais.append(percentual)
 
-        ordenado = sorted(
-            range(5), key=lambda i: percentuais[i], reverse=True
-        )
+        ordenado = sorted(range(5), key=lambda i: percentuais[i], reverse=True)
         maior_idx = ordenado[0]
         maior_percentual = percentuais[maior_idx]
         segundo_percentual = percentuais[ordenado[1]]
@@ -52,7 +63,7 @@ def lerRespostas(imgTh, campos, resp, limiar=15, margem_dupla=8):
 
 
 def avaliarRespostas(
-    imgTh, campos, resp, respostaCorreta, limiar=15, margem_dupla=8
+    imgTh, campos, resp, respostaCorreta, limiar=45, margem_dupla=15
 ):
     leitura = lerRespostas(imgTh, campos, resp, limiar, margem_dupla)
 
