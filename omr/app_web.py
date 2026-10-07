@@ -27,7 +27,7 @@ with open(PASTA_OMR / "resp.pkl", "rb") as arquivo:
 respostaCorreta = ["1-A", "2-C", "3-B", "4-D", "5-A", "6-B", "7-C", "8-E", "9-A", "10-D"]
 
 # bolha vazia já tem 10-22% de tinta (a letra impressa); preenchida passa de ~80%
-LIMIAR_PREENCHIMENTO = 45
+LIMIAR_PREENCHIMENTO = 20   # % de tinta no disco da bolha p/ contar como marcada (rabiscos ~28-41%, vazia <10%)
 MARGEM_DUPLA_MARCACAO = 15
 LADO_MAX = 2200   # maior lado da foto (px); acima disso reduz (mantém o QR legível)
 
@@ -157,7 +157,10 @@ def folha_pdf(identificador):
         uid = gerar_folha.uuid_de_texto(identificador)
     except ValueError:
         return {"ok": False, "mensagem": "Identificador invalido."}, 400
-    pdf = gerar_folha.gerar_pdf_a4(uid)
+    try:
+        pdf = gerar_folha.gerar_pdf_a4(uid)
+    except FileNotFoundError:
+        return {"ok": False, "mensagem": "folha_template.png nao encontrado no servidor (omr/)."}, 503
     return Response(
         pdf,
         mimetype="application/pdf",

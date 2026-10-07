@@ -14,10 +14,8 @@ LINHAS = [0.6076, 0.6720, 0.7368, 0.8020, 0.8674]             # 5 linhas por col
 # Lado do quadrado (px) usado para medir o preenchimento de cada bolha (ver gerarCampos.py).
 LADO_CAMPO = 60
 
-# Raio (px do canvas) do anel impresso de cada bolha.
-# ATENÇÃO: valor estimado. Confira com a folha real (omr/folha_template.png) e ajuste se a
-# resposta de /corrigir vier com "Nao foi possivel localizar a folha".
-RAIO_ANEL = 32
+# Raio (px do canvas) do anel impresso de cada bolha (medido na folha real: ~20-21 px).
+RAIO_ANEL = 20
 
 
 def _centros():
@@ -34,10 +32,10 @@ def _centros():
 CENTROS = _centros()
 
 # QR de identificação da versão da prova (coordenadas do canvas).
-# ATENÇÃO: valores estimados (QR centralizado abaixo das bolhas). Se o QR não for lido pela
-# posição, qr_util.ler_qr tenta achar o QR na foto inteira.
-QR_CENTRO = (506.4, 1250.0)
-QR_LADO = 140.0
+# Posição medida na caixa tracejada "Código / QR de Identificação" da folha real.
+# Se o QR não for lido por essa posição, qr_util.ler_qr procura o QR na foto inteira.
+QR_CENTRO = (499.0, 1277.0)
+QR_LADO = 80.0
 
 # Parâmetros de detecção de marcadores (não usados por marcadores.py atualmente).
 MARCADOR_AREA_MIN_FRAC = 0.00005

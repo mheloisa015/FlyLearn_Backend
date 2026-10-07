@@ -66,4 +66,12 @@ def ler_qr(img_bgr, matriz):
         texto = _tentar(cinza)
         if texto:
             return texto
+    # plano B: posição do QR fora do esperado -> procura o QR na foto inteira
+    maior = max(img_bgr.shape[:2])
+    for lado in (1600, 1100):
+        f = min(1.0, lado / float(maior))
+        reduzida = cv2.resize(img_bgr, None, fx=f, fy=f, interpolation=cv2.INTER_AREA) if f < 1.0 else img_bgr
+        texto = _tentar(cv2.cvtColor(reduzida, cv2.COLOR_BGR2GRAY))
+        if texto:
+            return texto
     return None
