@@ -37,9 +37,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'core',
 ]
 
 MIDDLEWARE = [
+    'core.middleware.SimpleCorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -125,3 +127,10 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+
+# CORS: origens do frontend que podem chamar a API diretamente (o Netlify já faz proxy de /api/*)
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+]
