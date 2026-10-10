@@ -12,3 +12,5 @@ flask
 flask-cors
 gunicorn
 opencv-python-headless
+psycopg[binary]
+dj-database-url
