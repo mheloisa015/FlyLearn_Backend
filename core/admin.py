@@ -1,15 +1,9 @@
 from django.contrib import admin
-from .models import Turma, Aluno
+from .models import Professor
+
+@admin.register(Professor)
+class ProfessorAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'email', 'ativo')
+    search_fields = ('nome', 'email')
 
 
-@admin.register(Turma)
-class TurmaAdmin(admin.ModelAdmin):
-    list_display = ('ano', 'disciplina', 'professor_id')
-    search_fields = ('disciplina',)
-
-
-@admin.register(Aluno)
-class AlunoAdmin(admin.ModelAdmin):
-    list_display = ('nome', 'ra', 'email', 'turma')
-    list_filter = ('turma',)
-    search_fields = ('nome', 'ra', 'email')
