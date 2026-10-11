@@ -1,6 +1,6 @@
 import json
 
-from django.contrib.auth.hashers import make_password
+from django.contrib.auth.hashers import make_password, check_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.http import JsonResponse
@@ -51,3 +51,23 @@ def professores(request):
 
     prof = Professor.objects.create(nome=nome, email=email, senha=make_password(senha))
     return JsonResponse(prof.to_dict(), status=201)
+
+#LOGIN
+@csrf_exempt
+@require_http_methods(['POST'])
+def login(request):
+    data = _body(request)
+    if data is None: 
+        return _erro('Informações inválidas.')
+    email = str(data.get('email') or '').strip().lower()
+    senha = str(data.get('senha') or '')
+
+    if not email or not senha:
+        return _erro('Informe o e-mail e a senha!')
+
+    prof = Professor.objects.filter(email__iexact=email).first()
+    if not prof or not check_password(senha, prof.senha):
+        return _erro('E-mail ou senha incorretos.', 401)
+    if not prof.ativo:
+        return _erro('Esta conta está desativada.', 403)
+    return JsonResponse (prof.to_dict())
