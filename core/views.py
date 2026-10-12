@@ -33,9 +33,6 @@ def _body(request):
     return data if isinstance(data, dict) else None
 
 
-# Enquanto não há login por token/sessão, o professor_id vem do próprio front
-# (query string em GET, corpo em POST) e cai no professor de teste (id 1) se
-# não for informado.
 def _professor_id(request, data=None):
     bruto = (data or {}).get('professor_id') or request.GET.get('professor_id')
     try:
@@ -91,17 +88,13 @@ def login(request):
     return JsonResponse(prof.to_dict())
 
 
-# ---------------------------------------------------------------------------
 # MATÉRIAS
-# ---------------------------------------------------------------------------
-
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def materias(request):
     if request.method == 'GET':
         qs = Materia.objects.filter(professor_id=_professor_id(request)).order_by('nome')
         return JsonResponse([m.to_dict() for m in qs], safe=False)
-
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -139,17 +132,13 @@ def materia_detalhe(request, pk):
     return JsonResponse(m.to_dict())
 
 
-# ---------------------------------------------------------------------------
 # TURMAS E ALUNOS
-# ---------------------------------------------------------------------------
-
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def turmas(request):
     if request.method == 'GET':
         qs = Turma.objects.filter(professor_id=_professor_id(request)).order_by('ano', 'disciplina')
         return JsonResponse([t.to_dict() for t in qs], safe=False)
-
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -187,7 +176,7 @@ def turma_detalhe(request, pk):
     t.save()
     return JsonResponse(t.to_dict())
 
-
+#ALUNOS
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def alunos(request):
@@ -197,7 +186,6 @@ def alunos(request):
         if turma_id:
             qs = qs.filter(turma_id=turma_id)
         return JsonResponse([a.to_dict() for a in qs.order_by('nome')], safe=False)
-
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -213,7 +201,6 @@ def alunos(request):
         return _erro('Informe o RA do aluno.', campo='ra')
     a = Aluno.objects.create(turma_id=turma_id, nome=nome, ra=ra, email=str(data.get('email') or '').strip())
     return JsonResponse(a.to_dict(), status=201)
-
 
 @csrf_exempt
 @require_http_methods(['PATCH', 'DELETE'])
@@ -243,10 +230,7 @@ def aluno_detalhe(request, pk):
     return JsonResponse(a.to_dict())
 
 
-# ---------------------------------------------------------------------------
-# BANCO DE QUESTÕES (questão + alternativas)
-# ---------------------------------------------------------------------------
-
+# VALIDAR ALTERANTIVAS
 def _validar_alts(alts):
     if not isinstance(alts, list) or len(alts) < 2 or len(alts) > 5:
         return 'Informe de 2 a 5 alternativas.'
@@ -256,7 +240,7 @@ def _validar_alts(alts):
         return 'Marque a alternativa correta.'
     return None
 
-
+#QUESTÕES
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def questoes(request):
@@ -269,7 +253,6 @@ def questoes(request):
         if ativo in ('0', '1'):
             qs = qs.filter(ativo=(ativo == '1'))
         return JsonResponse([q.to_dict() for q in qs.order_by('-id')], safe=False)
-
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -283,7 +266,6 @@ def questoes(request):
     erro_alts = _validar_alts(alts)
     if erro_alts:
         return _erro(erro_alts)
-
     q = Questao.objects.create(materia_id=materia_id, enunciado=enunciado, ativo=bool(data.get('ativo', True)))
     for i, a in enumerate(alts, start=1):
         Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
@@ -329,16 +311,8 @@ def questao_detalhe(request, pk):
     return JsonResponse(q.to_dict())
 
 
-# ---------------------------------------------------------------------------
-# PROVAS, VERSÕES E GABARITO
-#
-# Cada versão (versao_prova) tem seu próprio conjunto de prova_questao
-# (questão + ordem NESSA versão) e seu próprio gabarito (prova_questao ->
-# alternativa correta, fixado no momento da geração). A ordem das ALTERNATIVAS
-# não é embaralhada por versão nesse banco — a letra de cada alternativa é
-# sempre a posição ordem_original dela.
-# ---------------------------------------------------------------------------
 
+#PROVAS - GERAR VERSÃO
 def _gerar_versao(prova, qids, embaralhar_questoes=True):
     ordem_q = list(qids)
     if embaralhar_questoes:
@@ -352,14 +326,13 @@ def _gerar_versao(prova, qids, embaralhar_questoes=True):
             Gabarito.objects.create(versao_prova=versao, prova_questao=pq, alternativa=correta)
     return versao
 
-
+#PROVAS
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def provas(request):
     if request.method == 'GET':
         qs = Prova.objects.filter(professor_id=_professor_id(request)).order_by('-id')
         return JsonResponse([p.to_dict() for p in qs], safe=False)
-
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -368,7 +341,6 @@ def provas(request):
     qids = data.get('qids') or []
     n_versoes = int(data.get('n_versoes') or 1)
     emb_q = bool(data.get('embaralhar_questoes', True))
-
     if not nome:
         return _erro('Dê um nome à prova.', campo='nome')
     if not materia_id or not Materia.objects.filter(pk=materia_id).exists():
@@ -402,7 +374,7 @@ def prova_detalhe(request, pk):
     p.delete()
     return JsonResponse({'ok': True})
 
-
+#GERAR VERSÕES
 @csrf_exempt
 @require_http_methods(['POST'])
 def gerar_versoes(request, pk):
@@ -427,8 +399,7 @@ def versao_detalhe(request, pk):
 
 
 LETRAS = 'ABCDE'
-
-
+#VERSÃO COMPLETA DA PROVA
 @require_http_methods(['GET'])
 def versao_completa(request, pk):
     """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
@@ -437,7 +408,6 @@ def versao_completa(request, pk):
     prova = v.prova
     materia = prova.materia if prova else None
     gabarito_por_pq = {g.prova_questao_id: g.alternativa_id for g in Gabarito.objects.filter(versao_prova=v)}
-
     itens = []
     for it in v.itens.select_related('questao').order_by('ordem'):
         q = it.questao
@@ -462,7 +432,7 @@ def versao_completa(request, pk):
         'itens': itens,
     })
 
-
+#APLICAR PROVA
 @csrf_exempt
 @require_http_methods(['POST'])
 def aplicar_prova(request, pk):
@@ -489,7 +459,6 @@ def aplicar_prova(request, pk):
                                        data_aplicacao=data_aplicacao, status='aplicada')
         criadas.append(av)
     return JsonResponse([a.to_dict() for a in criadas], safe=False, status=201)
-
 
 @require_http_methods(['GET'])
 def avaliacoes(request):
