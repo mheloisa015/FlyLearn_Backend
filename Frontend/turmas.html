@@ -72,7 +72,7 @@
         <div class="panel">
           <h2>Nova turma</h2>
           <p class="sub">Informe o ano e a disciplina.</p>
-          <form action="#" method="post">
+          <form id="turma-form">
             <input type="hidden" name="id" value="">
             <div class="form-grid">
               <div class="field">
@@ -84,9 +84,10 @@
                 <input type="text" id="turma-disciplina" name="disciplina" maxlength="100" placeholder="Ex.: Matemática" required>
               </div>
             </div>
+            <div class="error-box" id="turma-err"></div>
             <div class="form-actions">
               <button type="reset" class="btn-small">Limpar</button>
-              <button type="submit" class="btn-generate">Salvar turma</button>
+              <button type="submit" class="btn-generate" id="turma-save">Cadastrar turma</button>
             </div>
           </form>
         </div>
@@ -98,24 +99,7 @@
               <p class="sub">Ano, disciplina e quantidade de alunos.</p>
             </div>
           </div>
-          <div class="mini-list">
-            <div class="mini-item">
-              <div><h4>3º ano</h4><div class="meta">Matemática</div></div>
-              <div><span class="count">26 alunos</span> <a class="btn-small" href="turmas.html?editar=1">Editar</a></div>
-            </div>
-            <div class="mini-item">
-              <div><h4>4º ano</h4><div class="meta">Língua Portuguesa</div></div>
-              <div><span class="count">24 alunos</span> <a class="btn-small" href="turmas.html?editar=2">Editar</a></div>
-            </div>
-            <div class="mini-item">
-              <div><h4>5º ano</h4><div class="meta">Geografia</div></div>
-              <div><span class="count">23 alunos</span> <a class="btn-small" href="turmas.html?editar=3">Editar</a></div>
-            </div>
-            <div class="mini-item">
-              <div><h4>6º ano</h4><div class="meta">Ciências</div></div>
-              <div><span class="count">23 alunos</span> <a class="btn-small" href="turmas.html?editar=4">Editar</a></div>
-            </div>
-          </div>
+          <div class="mini-list" id="turmas-list"></div>
         </div>
 
       </div>
@@ -124,17 +108,13 @@
       <div class="panel" style="margin-top:24px">
         <h2>Novo aluno</h2>
         <p class="sub">Todo aluno pertence a uma turma.</p>
-        <form action="#" method="post">
+        <form id="aluno-form">
           <input type="hidden" name="id" value="">
           <div class="form-grid">
             <div class="field full">
               <label for="aluno-turma">Turma</label>
               <select id="aluno-turma" name="turma_id" required>
                 <option value="">Selecione a turma</option>
-                <option value="1">3º ano · Matemática</option>
-                <option value="2">4º ano · Língua Portuguesa</option>
-                <option value="3">5º ano · Geografia</option>
-                <option value="4">6º ano · Ciências</option>
               </select>
             </div>
             <div class="field full">
@@ -151,9 +131,10 @@
               <input type="email" id="aluno-email" name="email" placeholder="aluno@escola.com">
             </div>
           </div>
+          <div class="error-box" id="aluno-err"></div>
           <div class="form-actions">
             <button type="reset" class="btn-small">Limpar</button>
-            <button type="submit" class="btn-generate">Salvar aluno</button>
+            <button type="submit" class="btn-generate" id="aluno-save">Cadastrar aluno</button>
           </div>
         </form>
       </div>
@@ -168,10 +149,6 @@
             <label for="filtro-turma">Turma</label>
             <select id="filtro-turma" name="filtro_turma">
               <option value="">Todas as turmas</option>
-              <option value="1">3º ano · Matemática</option>
-              <option value="2">4º ano · Língua Portuguesa</option>
-              <option value="3">5º ano · Geografia</option>
-              <option value="4">6º ano · Ciências</option>
             </select>
           </div>
         </div>
@@ -186,36 +163,7 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody>
-              <tr>
-                <td>Ana Beatriz Souza</td>
-                <td><span class="code">20240117</span></td>
-                <td>ana.souza@escola.com</td>
-                <td>3º ano · Matemática</td>
-                <td class="actions"><a class="btn-small" href="turmas.html?aluno=1">Editar</a></td>
-              </tr>
-              <tr>
-                <td>Lucas Henrique Prado</td>
-                <td><span class="code">20240122</span></td>
-                <td>lucas.prado@escola.com</td>
-                <td>3º ano · Matemática</td>
-                <td class="actions"><a class="btn-small" href="turmas.html?aluno=2">Editar</a></td>
-              </tr>
-              <tr>
-                <td>Marina Oliveira</td>
-                <td><span class="code">20230308</span></td>
-                <td>marina.oliveira@escola.com</td>
-                <td>5º ano · Geografia</td>
-                <td class="actions"><a class="btn-small" href="turmas.html?aluno=3">Editar</a></td>
-              </tr>
-              <tr>
-                <td>Pedro Almeida</td>
-                <td><span class="code">20230311</span></td>
-                <td>—</td>
-                <td>5º ano · Geografia</td>
-                <td class="actions"><a class="btn-small" href="turmas.html?aluno=4">Editar</a></td>
-              </tr>
-            </tbody>
+            <tbody id="alunos-list"></tbody>
           </table>
         </div>
       </div>
@@ -225,4 +173,60 @@
 </div>
 
 </body>
+<script src="app.js"></script>
+<script>
+let turmaEditId = null, alunoEditId = null;
+const turmaForm = $('#turma-form'), alunoForm = $('#aluno-form');
+const turmaLabel = t => `${t.ano}º ano · ${t.disciplina}`;
+const showError = (target, text) => { target.textContent = text; target.classList.toggle('show', !!text); };
+
+function fillTurmas(selected) {
+  const options = DB.turmas.map(t => `<option value="${t.id}"${t.id == selected ? ' selected' : ''}>${esc(turmaLabel(t))}</option>`).join('');
+  $('#aluno-turma').innerHTML = '<option value="">Selecione a turma</option>' + options;
+  $('#filtro-turma').innerHTML = '<option value="">Todas as turmas</option>' + options;
+}
+
+function drawTurmas() {
+  $('#turmas-list').innerHTML = DB.turmas.map(t => {
+    const count = DB.alunos.filter(a => a.turma_id == t.id).length;
+    return `<div class="mini-item"><div><h4>${esc(t.ano)}º ano</h4><div class="meta">${esc(t.disciplina)}</div></div><div><span class="count">${count} aluno${count == 1 ? '' : 's'}</span> <button class="btn-small" type="button" onclick="editTurma(${t.id})">Editar</button> <button class="btn-icon-del" type="button" onclick="deleteTurma(${t.id})" aria-label="Excluir ${esc(turmaLabel(t))}">Excluir</button></div></div>`;
+  }).join('') || '<div class="aluno-empty">Nenhuma turma cadastrada.</div>';
+}
+
+function drawAlunos() {
+  const filter = $('#filtro-turma').value;
+  const alunos = DB.alunos.filter(a => !filter || a.turma_id == filter);
+  $('#alunos-list').innerHTML = alunos.map(a => {
+    const t = by('turmas', a.turma_id);
+    return `<tr><td>${esc(a.nome)}</td><td><span class="code">${esc(a.ra)}</span></td><td>${esc(a.email || '—')}</td><td>${t ? esc(turmaLabel(t)) : '—'}</td><td class="actions"><button class="btn-small" type="button" onclick="editAluno(${a.id})">Editar</button> <button class="btn-icon-del" type="button" onclick="deleteAluno(${a.id})" aria-label="Excluir ${esc(a.nome)}">Excluir</button></td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="aluno-empty">Nenhum aluno encontrado.</td></tr>';
+}
+
+function resetTurma() { turmaEditId = null; $('#turma-ano').value = ''; $('#turma-disciplina').value = ''; $('#turma-save').textContent = 'Cadastrar turma'; showError($('#turma-err'), ''); }
+function resetAluno() { alunoEditId = null; $('#aluno-turma').value = ''; $('#aluno-nome').value = ''; $('#aluno-ra').value = ''; $('#aluno-email').value = ''; $('#aluno-save').textContent = 'Cadastrar aluno'; showError($('#aluno-err'), ''); }
+function editTurma(id) { const t = by('turmas', id); turmaEditId = id; $('#turma-ano').value = t.ano; $('#turma-disciplina').value = t.disciplina; $('#turma-save').textContent = 'Salvar alterações'; $('#turma-ano').focus(); }
+function editAluno(id) { const a = by('alunos', id); alunoEditId = id; fillTurmas(a.turma_id); $('#aluno-turma').value = a.turma_id; $('#aluno-nome').value = a.nome; $('#aluno-ra').value = a.ra; $('#aluno-email').value = a.email || ''; $('#aluno-save').textContent = 'Salvar alterações'; $('#aluno-nome').focus(); }
+function deleteTurma(id) { if (DB.alunos.some(a => a.turma_id == id)) return alert('Não é possível excluir uma turma que possui alunos.'); if (!confirm('Excluir esta turma?')) return; DB.turmas = DB.turmas.filter(t => t.id != id); save(); fillTurmas(); drawTurmas(); drawAlunos(); }
+function deleteAluno(id) { if (!confirm('Excluir este aluno?')) return; DB.alunos = DB.alunos.filter(a => a.id != id); save(); drawTurmas(); drawAlunos(); }
+
+turmaForm.onsubmit = event => { event.preventDefault(); const ano = Number($('#turma-ano').value), disciplina = $('#turma-disciplina').value.trim();
+  if (!ano || ano < 1 || ano > 12) return showError($('#turma-err'), 'Informe um ano entre 1 e 12.');
+  if (!disciplina) return showError($('#turma-err'), 'Informe a disciplina.');
+  if (DB.turmas.some(t => t.id != turmaEditId && t.ano == ano && t.disciplina.toLowerCase() == disciplina.toLowerCase())) return showError($('#turma-err'), 'Essa turma já está cadastrada.');
+  if (turmaEditId) Object.assign(by('turmas', turmaEditId), { ano, disciplina }); else DB.turmas.push({ id: id(), ano, disciplina });
+  save(); resetTurma(); fillTurmas(); drawTurmas(); drawAlunos();
+};
+alunoForm.onsubmit = event => { event.preventDefault(); const turma_id = Number($('#aluno-turma').value), nome = $('#aluno-nome').value.trim(), ra = $('#aluno-ra').value.trim(), email = $('#aluno-email').value.trim();
+  if (!turma_id) return showError($('#aluno-err'), 'Selecione uma turma.');
+  if (!nome) return showError($('#aluno-err'), 'Informe o nome completo.');
+  if (!/^\d+$/.test(ra)) return showError($('#aluno-err'), 'Informe um RA somente com números.');
+  if (DB.alunos.some(a => a.id != alunoEditId && a.turma_id == turma_id && String(a.ra) == ra)) return showError($('#aluno-err'), 'Já existe um aluno com esse RA nessa turma.');
+  if (alunoEditId) Object.assign(by('alunos', alunoEditId), { turma_id, nome, ra, email }); else DB.alunos.push({ id: id(), turma_id, nome, ra, email });
+  save(); resetAluno(); fillTurmas(); drawTurmas(); drawAlunos();
+};
+turmaForm.onreset = () => setTimeout(resetTurma);
+alunoForm.onreset = () => setTimeout(resetAluno);
+$('#filtro-turma').onchange = drawAlunos;
+fillTurmas(); drawTurmas(); drawAlunos();
+</script>
 </html>
