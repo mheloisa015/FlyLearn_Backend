@@ -11,7 +11,7 @@ from django.core.wsgi import get_wsgi_application  # noqa: E402
 from app_web import app as flask_app               # noqa: E402
 
 django_app = get_wsgi_application()
-ROTAS_DJANGO = ('/professores', '/admin', '/static')
+ROTAS_DJANGO = ('/professores','/login', '/materias', '/turmas', '/alunos', '/questoes', '/provas','/versoes','/avaliacoes', '/admin', '/static')
 
 
 def application(environ, start_response):
