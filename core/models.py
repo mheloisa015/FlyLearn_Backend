@@ -1,5 +1,3 @@
-"""Models mapeados 1:1 nas tabelas que já existem no Postgres (criadas via pgAdmin).
-Todas managed=False: o Django NUNCA cria/altera essas tabelas, só lê e grava."""
 from django.db import models
 
 
@@ -20,8 +18,7 @@ class Professor(models.Model):
 
 
 class Materia(models.Model):
-    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',
-                                   related_name='materias', null=True)
+    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',related_name='materias', null=True)
     nome = models.CharField(max_length=255, null=True, blank=True)
     descricao = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -41,8 +38,7 @@ class Materia(models.Model):
 
 
 class Turma(models.Model):
-    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',
-                                   related_name='turmas', null=True)
+    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',related_name='turmas', null=True)
     ano = models.IntegerField(null=True, blank=True)
     disciplina = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -57,8 +53,7 @@ class Turma(models.Model):
 
 
 class Aluno(models.Model):
-    turma = models.ForeignKey(Turma, on_delete=models.CASCADE, db_column='turma_id', related_name='alunos',
-                               null=True)
+    turma = models.ForeignKey(Turma, on_delete=models.CASCADE, db_column='turma_id', related_name='alunos',null=True)
     nome = models.CharField(max_length=255, null=True, blank=True)
     ra = models.BigIntegerField(null=True, blank=True)
     email = models.TextField(null=True, blank=True)
@@ -73,8 +68,7 @@ class Aluno(models.Model):
 
 
 class Questao(models.Model):
-    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='questoes',
-                                 null=True)
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='questoes',null=True)
     enunciado = models.TextField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -94,8 +88,7 @@ class Questao(models.Model):
 
 
 class Alternativa(models.Model):
-    questao = models.ForeignKey(Questao, on_delete=models.CASCADE, db_column='questao_id',
-                                 related_name='alternativas', null=True)
+    questao = models.ForeignKey(Questao, on_delete=models.CASCADE, db_column='questao_id',related_name='alternativas', null=True)
     texto = models.TextField(null=True, blank=True)
     ordem_original = models.IntegerField(null=True, blank=True)
     correta = models.BooleanField(default=False)
@@ -114,10 +107,8 @@ class Alternativa(models.Model):
 
 
 class Prova(models.Model):
-    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',
-                                   related_name='provas', null=True)
-    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='provas',
-                                 null=True)
+    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id',related_name='provas', null=True)
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='provas',null=True)
     nome = models.CharField(max_length=255, null=True, blank=True)
     descricao = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -128,8 +119,6 @@ class Prova(models.Model):
         managed = False
 
     def to_dict(self):
-        # não há lista de questões no nível da prova: cada versão tem a sua (prova_questao).
-        # usamos a versão mais recente como referência de "quantas questões" a prova tem.
         versoes = list(self.versoes.order_by('id'))
         n_questoes = versoes[-1].itens.count() if versoes else 0
         return {
@@ -142,8 +131,7 @@ class Prova(models.Model):
 
 
 class VersaoProva(models.Model):
-    prova = models.ForeignKey(Prova, on_delete=models.CASCADE, db_column='prova_id', related_name='versoes',
-                               null=True)
+    prova = models.ForeignKey(Prova, on_delete=models.CASCADE, db_column='prova_id', related_name='versoes',null=True)
     uuid = models.UUIDField()
     codigo = models.CharField(max_length=50, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -163,9 +151,7 @@ class VersaoProva(models.Model):
 
 
 class ProvaQuestao(models.Model):
-    """Questão (e sua ordem) dentro de UMA versão específica da prova."""
-    versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id',
-                                      related_name='itens', null=True)
+    versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id',related_name='itens', null=True)
     questao = models.ForeignKey(Questao, on_delete=models.CASCADE, db_column='questao_id', null=True)
     ordem = models.IntegerField(null=True, blank=True)
 
@@ -182,8 +168,6 @@ class ProvaQuestao(models.Model):
 
 
 class Gabarito(models.Model):
-    """Alternativa correta de cada prova_questao, fixada no momento em que a versão foi gerada
-    (não muda retroativamente se a questão for editada depois no banco de questões)."""
     versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id', null=True)
     prova_questao = models.ForeignKey(ProvaQuestao, on_delete=models.CASCADE, db_column='prova_questao_id',
                                        null=True)
@@ -195,10 +179,8 @@ class Gabarito(models.Model):
 
 
 class Avaliacao(models.Model):
-    versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id',
-                                      related_name='avaliacoes', null=True)
-    aluno = models.ForeignKey(Aluno, on_delete=models.CASCADE, db_column='aluno_id', related_name='avaliacoes',
-                               null=True)
+    versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id',related_name='avaliacoes', null=True)
+    aluno = models.ForeignKey(Aluno, on_delete=models.CASCADE, db_column='aluno_id', related_name='avaliacoes',null=True)
     data_aplicacao = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=50, null=True, blank=True, default='aplicada')
     nota = models.FloatField(null=True, blank=True)
@@ -221,12 +203,9 @@ class Avaliacao(models.Model):
 
 
 class Resposta(models.Model):
-    avaliacao = models.ForeignKey(Avaliacao, on_delete=models.CASCADE, db_column='avaliacao_id',
-                                   related_name='respostas', null=True)
-    prova_questao = models.ForeignKey(ProvaQuestao, on_delete=models.CASCADE, db_column='prova_questao_id',
-                                       null=True)
-    alternativa = models.ForeignKey(Alternativa, on_delete=models.SET_NULL, db_column='alternativa_id', null=True,
-                                     blank=True)  # None = em branco/não identificada
+    avaliacao = models.ForeignKey(Avaliacao, on_delete=models.CASCADE, db_column='avaliacao_id',related_name='respostas', null=True)
+    prova_questao = models.ForeignKey(ProvaQuestao, on_delete=models.CASCADE, db_column='prova_questao_id',null=True)
+    alternativa = models.ForeignKey(Alternativa, on_delete=models.SET_NULL, db_column='alternativa_id', null=True,blank=True)
     correta = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
