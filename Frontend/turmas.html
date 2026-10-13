@@ -177,8 +177,27 @@
 <script>
 let turmaEditId = null, alunoEditId = null;
 const turmaForm = $('#turma-form'), alunoForm = $('#aluno-form');
+const API_URL = 'http://127.0.0.1:8000/api';
 const turmaLabel = t => `${t.ano}º ano · ${t.disciplina}`;
 const showError = (target, text) => { target.textContent = text; target.classList.toggle('show', !!text); };
+async function apiRequest(path, method = 'GET', body) {
+  const response = await fetch(`${API_URL}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Não foi possível salvar no banco.');
+  return data;
+}
+
+async function carregarDados() {
+  try {
+    const data = await apiRequest('/turmas/');
+    DB.turmas = data.turmas;
+    DB.alunos = data.alunos;
+    save();
+  } catch (error) {
+    showError($('#turma-err'), 'Banco indisponível. Inicie o backend Django para cadastrar dados.');
+  }
+  fillTurmas(); drawTurmas(); drawAlunos();
+}
 
 function fillTurmas(selected) {
   const options = DB.turmas.map(t => `<option value="${t.id}"${t.id == selected ? ' selected' : ''}>${esc(turmaLabel(t))}</option>`).join('');
@@ -206,27 +225,43 @@ function resetTurma() { turmaEditId = null; $('#turma-ano').value = ''; $('#turm
 function resetAluno() { alunoEditId = null; $('#aluno-turma').value = ''; $('#aluno-nome').value = ''; $('#aluno-ra').value = ''; $('#aluno-email').value = ''; $('#aluno-save').textContent = 'Cadastrar aluno'; showError($('#aluno-err'), ''); }
 function editTurma(id) { const t = by('turmas', id); turmaEditId = id; $('#turma-ano').value = t.ano; $('#turma-disciplina').value = t.disciplina; $('#turma-save').textContent = 'Salvar alterações'; $('#turma-ano').focus(); }
 function editAluno(id) { const a = by('alunos', id); alunoEditId = id; fillTurmas(a.turma_id); $('#aluno-turma').value = a.turma_id; $('#aluno-nome').value = a.nome; $('#aluno-ra').value = a.ra; $('#aluno-email').value = a.email || ''; $('#aluno-save').textContent = 'Salvar alterações'; $('#aluno-nome').focus(); }
-function deleteTurma(id) { if (DB.alunos.some(a => a.turma_id == id)) return alert('Não é possível excluir uma turma que possui alunos.'); if (!confirm('Excluir esta turma?')) return; DB.turmas = DB.turmas.filter(t => t.id != id); save(); fillTurmas(); drawTurmas(); drawAlunos(); }
-function deleteAluno(id) { if (!confirm('Excluir este aluno?')) return; DB.alunos = DB.alunos.filter(a => a.id != id); save(); drawTurmas(); drawAlunos(); }
+async function deleteTurma(id) {
+  if (DB.alunos.some(a => a.turma_id == id)) return alert('Não é possível excluir uma turma que possui alunos.');
+  if (!confirm('Excluir esta turma?')) return;
+  try { await apiRequest(`/turmas/${id}/`, 'DELETE'); DB.turmas = DB.turmas.filter(t => t.id != id); save(); fillTurmas(); drawTurmas(); drawAlunos(); }
+  catch (error) { alert(error.message); }
+}
+async function deleteAluno(id) {
+  if (!confirm('Excluir este aluno?')) return;
+  try { await apiRequest(`/alunos/${id}/`, 'DELETE'); DB.alunos = DB.alunos.filter(a => a.id != id); save(); drawTurmas(); drawAlunos(); }
+  catch (error) { alert(error.message); }
+}
 
-turmaForm.onsubmit = event => { event.preventDefault(); const ano = Number($('#turma-ano').value), disciplina = $('#turma-disciplina').value.trim();
+turmaForm.onsubmit = async event => { event.preventDefault(); const ano = Number($('#turma-ano').value), disciplina = $('#turma-disciplina').value.trim();
   if (!ano || ano < 1 || ano > 12) return showError($('#turma-err'), 'Informe um ano entre 1 e 12.');
   if (!disciplina) return showError($('#turma-err'), 'Informe a disciplina.');
   if (DB.turmas.some(t => t.id != turmaEditId && t.ano == ano && t.disciplina.toLowerCase() == disciplina.toLowerCase())) return showError($('#turma-err'), 'Essa turma já está cadastrada.');
-  if (turmaEditId) Object.assign(by('turmas', turmaEditId), { ano, disciplina }); else DB.turmas.push({ id: id(), ano, disciplina });
-  save(); resetTurma(); fillTurmas(); drawTurmas(); drawAlunos();
+  try {
+    const turma = await apiRequest(turmaEditId ? `/turmas/${turmaEditId}/` : '/turmas/', turmaEditId ? 'PUT' : 'POST', { ano, disciplina });
+    if (turmaEditId) Object.assign(by('turmas', turmaEditId), turma); else DB.turmas.push(turma);
+    save(); resetTurma(); fillTurmas(); drawTurmas(); drawAlunos();
+  } catch (error) { showError($('#turma-err'), error.message); }
 };
-alunoForm.onsubmit = event => { event.preventDefault(); const turma_id = Number($('#aluno-turma').value), nome = $('#aluno-nome').value.trim(), ra = $('#aluno-ra').value.trim(), email = $('#aluno-email').value.trim();
+alunoForm.onsubmit = async event => { event.preventDefault(); const turma_id = Number($('#aluno-turma').value), nome = $('#aluno-nome').value.trim(), ra = $('#aluno-ra').value.trim(), email = $('#aluno-email').value.trim();
   if (!turma_id) return showError($('#aluno-err'), 'Selecione uma turma.');
   if (!nome) return showError($('#aluno-err'), 'Informe o nome completo.');
   if (!/^\d+$/.test(ra)) return showError($('#aluno-err'), 'Informe um RA somente com números.');
   if (DB.alunos.some(a => a.id != alunoEditId && a.turma_id == turma_id && String(a.ra) == ra)) return showError($('#aluno-err'), 'Já existe um aluno com esse RA nessa turma.');
-  if (alunoEditId) Object.assign(by('alunos', alunoEditId), { turma_id, nome, ra, email }); else DB.alunos.push({ id: id(), turma_id, nome, ra, email });
-  save(); resetAluno(); fillTurmas(); drawTurmas(); drawAlunos();
+  try {
+    const aluno = await apiRequest(alunoEditId ? `/alunos/${alunoEditId}/` : '/alunos/', alunoEditId ? 'PUT' : 'POST', { turma_id, nome, ra, email });
+    if (alunoEditId) Object.assign(by('alunos', alunoEditId), aluno); else DB.alunos.push(aluno);
+    save(); resetAluno(); fillTurmas(); drawTurmas(); drawAlunos();
+  } catch (error) { showError($('#aluno-err'), error.message); }
 };
 turmaForm.onreset = () => setTimeout(resetTurma);
 alunoForm.onreset = () => setTimeout(resetAluno);
 $('#filtro-turma').onchange = drawAlunos;
 fillTurmas(); drawTurmas(); drawAlunos();
+carregarDados();
 </script>
 </html>

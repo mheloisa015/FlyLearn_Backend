@@ -27,6 +27,23 @@
 /* materia: id, professor_id, nome, descricao, created_at, updated_at */
 let editId=null;
 const tb=$('#tb');
+const API_URL='http://127.0.0.1:8000/api';
+async function apiRequest(path,method='GET',body){
+  const response=await fetch(`${API_URL}${path}`,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Não foi possível salvar no banco.');
+  return data;
+}
+async function loadMaterias(){
+  try{
+    const data=await apiRequest('/materias/');
+    DB.materias=data.materias;save();draw();
+  }catch(error){
+    $('#err').textContent='Banco indisponível. Inicie o backend Django para cadastrar matérias.';
+    $('#err').classList.add('show');
+    draw();
+  }
+}
 function draw(){
   const q=$('#q').value.trim().toLowerCase();
   const ms=DB.materias.filter(m=>!q||m.nome.toLowerCase().includes(q));
@@ -37,22 +54,25 @@ function draw(){
 }
 function reset(){editId=null;$('#mn').value='';$('#md').value='';$('#form-title').textContent='Nova matéria';$('#save').textContent='Cadastrar matéria';$('#cancel').style.display='none';$('#err').classList.remove('show')}
 function edit(i){const m=by('materias',i);editId=i;$('#mn').value=m.nome;$('#md').value=m.descricao||'';$('#form-title').textContent='Editar matéria';$('#save').textContent='Salvar alterações';$('#cancel').style.display='';$('#mn').focus()}
-function del(i){
+async function del(i){
   const m=by('materias',i);
   if(DB.questoes.some(x=>x.materia_id==i)||DB.provas.some(p=>p.materia_id==i))return alert('Não é possível excluir: há questões ou provas vinculadas a esta matéria.');
   if(!confirm('Excluir a matéria “'+m.nome+'”?'))return;
-  DB.materias=DB.materias.filter(x=>x.id!=i);save();if(editId==i)reset();draw();
+  try{await apiRequest(`/materias/${i}/`,'DELETE');DB.materias=DB.materias.filter(x=>x.id!=i);save();if(editId==i)reset();draw()}
+  catch(error){$('#err').textContent=error.message;$('#err').classList.add('show')}
 }
-$('#save').onclick=()=>{
+$('#save').onclick=async()=>{
   const nome=$('#mn').value.trim(),err=$('#err');
   if(!nome){err.textContent='Informe o nome da matéria.';err.classList.add('show');return}
   if(DB.materias.some(m=>m.id!=editId&&m.nome.toLowerCase()==nome.toLowerCase())){err.textContent='Você já tem uma matéria com esse nome.';err.classList.add('show');return}
-  const now=new Date().toISOString(),desc=$('#md').value.trim();
-  if(editId){Object.assign(by('materias',editId),{nome,descricao:desc,updated_at:now})}
-  else DB.materias.push({id:id(),professor_id:1,nome,descricao:desc,created_at:now,updated_at:now});
-  save();reset();draw();
+  const desc=$('#md').value.trim();
+  try{
+    const materia=await apiRequest(editId?`/materias/${editId}/`:'/materias/',editId?'PUT':'POST',{nome,descricao:desc});
+    if(editId)Object.assign(by('materias',editId),materia);else DB.materias.push(materia);
+    save();reset();draw();
+  }catch(error){err.textContent=error.message;err.classList.add('show')}
 };
 $('#cancel').onclick=reset;$('#q').oninput=draw;
-draw();
+loadMaterias();
 </script>
 </body></html>
