@@ -7,13 +7,13 @@ urlpatterns = [
     path('login/', views.login, name='login'),
 
     path('materias/', views.materias, name='materias'),
-    path('materias/<int:pk>/', views.materia_detalhe, name='materia-detalhe'),
+    path('materias/<int:materia_id>/', views.materias, name='materia-detalhe'),
 
     path('turmas/', views.turmas, name='turmas'),
-    path('turmas/<int:pk>/', views.turma_detalhe, name='turma-detalhe'),
+    path('turmas/<int:turma_id>/', views.turmas, name='turma-detalhe'),
 
     path('alunos/', views.alunos, name='alunos'),
-    path('alunos/<int:pk>/', views.aluno_detalhe, name='aluno-detalhe'),
+    path('alunos/<int:aluno_id>/', views.alunos, name='aluno-detalhe'),
 
     path('questoes/', views.questoes, name='questoes'),
     path('questoes/<int:pk>/', views.questao_detalhe, name='questao-detalhe'),
