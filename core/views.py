@@ -2,6 +2,7 @@ import json
 import random
 import uuid as uuid_lib
 
+from django.db import IntegrityError
 from django.contrib.auth.hashers import make_password, check_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
