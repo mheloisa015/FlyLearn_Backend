@@ -39,7 +39,30 @@ def _professor_id(request, data=None):
         return int(bruto)
     except (TypeError, ValueError):
         return 1
+def turma_json(turma):
+	return {'id': turma.id, 'ano': turma.ano, 'disciplina': turma.disciplina}
 
+def aluno_json(aluno):
+	return {'id': aluno.id, 'turma_id': aluno.turma_id, 'nome': aluno.nome, 'ra': aluno.ra, 'email': aluno.email}
+
+def materia_json(materia):
+	return {
+		'id': materia.id,
+		'nome': materia.nome,
+		'descricao': materia.descricao,
+		'created_at': materia.created_at.isoformat(),
+		'updated_at': materia.updated_at.isoformat(),
+	}
+
+def resposta(request, data, status=200):
+	response = JsonResponse(data, status=status)
+	response['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+	response['Access-Control-Allow-Headers'] = 'Content-Type'
+	response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+	return response
+
+def dados(request):
+	return json.loads(request.body or '{}')
 
 # CADASTRO PROFESSOR
 @csrf_exempt
@@ -87,147 +110,114 @@ def login(request):
         return _erro('Esta conta está desativada.', 403)
     return JsonResponse(prof.to_dict())
 
-
-# MATÉRIAS
+#TURMAS
 @csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def materias(request):
-    if request.method == 'GET':
-        qs = Materia.objects.filter(professor_id=_professor_id(request)).order_by('nome')
-        return JsonResponse([m.to_dict() for m in qs], safe=False)
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    nome = str(data.get('nome') or '').strip()
-    if not nome:
-        return _erro('Informe o nome da matéria.', campo='nome')
-    pid = _professor_id(request, data)
-    if Materia.objects.filter(professor_id=pid, nome__iexact=nome).exists():
-        return _erro('Você já tem uma matéria com esse nome.', 409, 'nome')
-    m = Materia.objects.create(professor_id=pid, nome=nome, descricao=str(data.get('descricao') or '').strip())
-    return JsonResponse(m.to_dict(), status=201)
-
-
-@csrf_exempt
-@require_http_methods(['PATCH', 'DELETE'])
-def materia_detalhe(request, pk):
-    m = get_object_or_404(Materia, pk=pk)
-    if request.method == 'DELETE':
-        if Questao.objects.filter(materia_id=pk).exists() or Prova.objects.filter(materia_id=pk).exists():
-            return _erro('Não é possível excluir: há questões ou provas vinculadas a esta matéria.')
-        m.delete()
-        return JsonResponse({'ok': True})
-
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    if 'nome' in data:
-        nome = str(data['nome']).strip()
-        if not nome:
-            return _erro('Informe o nome da matéria.', campo='nome')
-        m.nome = nome
-    if 'descricao' in data:
-        m.descricao = str(data['descricao']).strip()
-    m.save()
-    return JsonResponse(m.to_dict())
-
-
-# TURMAS E ALUNOS
-@csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def turmas(request):
-    if request.method == 'GET':
-        qs = Turma.objects.filter(professor_id=_professor_id(request)).order_by('ano', 'disciplina')
-        return JsonResponse([t.to_dict() for t in qs], safe=False)
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    disciplina = str(data.get('disciplina') or '').strip()
-    if not disciplina:
-        return _erro('Informe a disciplina da turma.', campo='disciplina')
-    try:
-        ano = int(data.get('ano'))
-    except (TypeError, ValueError):
-        return _erro('Informe o ano/série da turma.', campo='ano')
-    t = Turma.objects.create(professor_id=_professor_id(request, data), ano=ano, disciplina=disciplina)
-    return JsonResponse(t.to_dict(), status=201)
-
-
-@csrf_exempt
-@require_http_methods(['PATCH', 'DELETE'])
-def turma_detalhe(request, pk):
-    t = get_object_or_404(Turma, pk=pk)
-    if request.method == 'DELETE':
-        if Aluno.objects.filter(turma_id=pk).exists():
-            return _erro('Não é possível excluir: há alunos nesta turma.')
-        t.delete()
-        return JsonResponse({'ok': True})
-
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    if 'ano' in data:
-        try:
-            t.ano = int(data['ano'])
-        except (TypeError, ValueError):
-            return _erro('Ano inválido.', campo='ano')
-    if 'disciplina' in data:
-        t.disciplina = str(data['disciplina']).strip()
-    t.save()
-    return JsonResponse(t.to_dict())
+@require_http_methods(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def turmas(request, turma_id=None):
+	if request.method == 'OPTIONS':
+		return resposta(request, {})
+	if request.method == 'GET':
+		return resposta(request, {'turmas': [turma_json(t) for t in Turma.objects.all()], 'alunos': [aluno_json(a) for a in Aluno.objects.all()]})
+	if request.method == 'POST':
+		try:
+			body = dados(request)
+			ano = int(body.get('ano', 0))
+			disciplina = str(body.get('disciplina', '')).strip()
+			if not 1 <= ano <= 12 or not disciplina:
+				return resposta(request, {'error': 'Ano e disciplina são obrigatórios.'}, 400)
+			turma = Turma.objects.create(ano=ano, disciplina=disciplina)
+		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
+			return resposta(request, {'error': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
+		return resposta(request, turma_json(turma), 201)
+	try:
+		turma = Turma.objects.get(pk=turma_id)
+	except Turma.DoesNotExist:
+		return resposta(request, {'error': 'Turma não encontrada.'}, 404)
+	if request.method == 'DELETE':
+		turma.delete()
+		return resposta(request, {})
+	try:
+		body = dados(request)
+		turma.ano = int(body.get('ano', turma.ano))
+		turma.disciplina = str(body.get('disciplina', turma.disciplina)).strip()
+		if not 1 <= turma.ano <= 12 or not turma.disciplina:
+			return resposta(request, {'error': 'Ano e disciplina são obrigatórios.'}, 400)
+		turma.save()
+	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
+		return resposta(request, {'error': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
+	return resposta(request, turma_json(turma))
 
 #ALUNOS
 @csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def alunos(request):
-    if request.method == 'GET':
-        qs = Aluno.objects.all()
-        turma_id = request.GET.get('turma_id')
-        if turma_id:
-            qs = qs.filter(turma_id=turma_id)
-        return JsonResponse([a.to_dict() for a in qs.order_by('nome')], safe=False)
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    nome = str(data.get('nome') or '').strip()
-    turma_id = data.get('turma_id')
-    if not nome:
-        return _erro('Informe o nome do aluno.', campo='nome')
-    if not turma_id or not Turma.objects.filter(pk=turma_id).exists():
-        return _erro('Escolha uma turma válida.', campo='turma_id')
-    try:
-        ra = int(data.get('ra'))
-    except (TypeError, ValueError):
-        return _erro('Informe o RA do aluno.', campo='ra')
-    a = Aluno.objects.create(turma_id=turma_id, nome=nome, ra=ra, email=str(data.get('email') or '').strip())
-    return JsonResponse(a.to_dict(), status=201)
+@require_http_methods(['POST', 'PUT', 'DELETE', 'OPTIONS'])
+def alunos(request, aluno_id=None):
+	if request.method == 'OPTIONS':
+		return resposta(request, {})
+	if request.method == 'POST':
+		try:
+			body = dados(request)
+			turma = Turma.objects.get(pk=int(body.get('turma_id', 0)))
+			nome = str(body.get('nome', '')).strip()
+			ra = str(body.get('ra', '')).strip()
+			if not nome or not ra:
+				return resposta(request, {'error': 'Nome e RA são obrigatórios.'}, 400)
+			aluno = Aluno.objects.create(turma=turma, nome=nome, ra=ra, email=str(body.get('email', '')).strip())
+		except (ValueError, TypeError, json.JSONDecodeError, Turma.DoesNotExist, IntegrityError):
+			return resposta(request, {'error': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
+		return resposta(request, aluno_json(aluno), 201)
+	try:
+		aluno = Aluno.objects.get(pk=aluno_id)
+	except Aluno.DoesNotExist:
+		return resposta(request, {'error': 'Aluno não encontrado.'}, 404)
+	if request.method == 'DELETE':
+		aluno.delete()
+		return resposta(request, {})
+	try:
+		body = dados(request)
+		aluno.turma_id = int(body.get('turma_id', aluno.turma_id))
+		aluno.nome = str(body.get('nome', aluno.nome)).strip()
+		aluno.ra = str(body.get('ra', aluno.ra)).strip()
+		aluno.email = str(body.get('email', aluno.email)).strip()
+		aluno.save()
+	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
+		return resposta(request, {'error': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
+	return resposta(request, aluno_json(aluno))
 
+#MATERIAS
 @csrf_exempt
-@require_http_methods(['PATCH', 'DELETE'])
-def aluno_detalhe(request, pk):
-    a = get_object_or_404(Aluno, pk=pk)
-    if request.method == 'DELETE':
-        if Avaliacao.objects.filter(aluno_id=pk).exists():
-            return _erro('Este aluno já tem avaliações aplicadas e não pode ser excluído.')
-        a.delete()
-        return JsonResponse({'ok': True})
-
-    data = _body(request)
-    if data is None:
-        return _erro('Informações inválidas.')
-    if 'nome' in data:
-        a.nome = str(data['nome']).strip()
-    if 'ra' in data:
-        try:
-            a.ra = int(data['ra'])
-        except (TypeError, ValueError):
-            return _erro('RA inválido.', campo='ra')
-    if 'email' in data:
-        a.email = str(data['email']).strip()
-    if 'turma_id' in data:
-        a.turma_id = data['turma_id']
-    a.save()
-    return JsonResponse(a.to_dict())
+@require_http_methods(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def materias(request, materia_id=None):
+	if request.method == 'OPTIONS':
+		return resposta(request, {})
+	if request.method == 'GET':
+		return resposta(request, {'materias': [materia_json(m) for m in Materia.objects.all()]})
+	if request.method == 'POST':
+		try:
+			body = dados(request)
+			nome = str(body.get('nome', '')).strip()
+			if not nome:
+				return resposta(request, {'error': 'Nome da matéria é obrigatório.'}, 400)
+			materia = Materia.objects.create(nome=nome, descricao=str(body.get('descricao', '')).strip())
+		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
+			return resposta(request, {'error': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
+		return resposta(request, materia_json(materia), 201)
+	try:
+		materia = Materia.objects.get(pk=materia_id)
+	except Materia.DoesNotExist:
+		return resposta(request, {'error': 'Matéria não encontrada.'}, 404)
+	if request.method == 'DELETE':
+		materia.delete()
+		return resposta(request, {})
+	try:
+		body = dados(request)
+		materia.nome = str(body.get('nome', materia.nome)).strip()
+		materia.descricao = str(body.get('descricao', materia.descricao)).strip()
+		if not materia.nome:
+			return resposta(request, {'error': 'Nome da matéria é obrigatório.'}, 400)
+		materia.save()
+	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
+		return resposta(request, {'error': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
+	return resposta(request, materia_json(materia))
 
 
 # VALIDAR ALTERANTIVAS
