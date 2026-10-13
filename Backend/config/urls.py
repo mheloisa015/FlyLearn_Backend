@@ -17,6 +17,14 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
+from core.views import alunos, materias, turmas
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/turmas/', turmas),
+    path('api/turmas/<int:turma_id>/', turmas),
+    path('api/alunos/', alunos),
+    path('api/alunos/<int:aluno_id>/', alunos),
+    path('api/materias/', materias),
+    path('api/materias/<int:materia_id>/', materias),
 ]
