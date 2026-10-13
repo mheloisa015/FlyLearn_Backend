@@ -1,0 +1,16 @@
+asgiref==3.12.1
+charset-normalizer==3.5.1
+colorama==0.4.6
+Django==6.1.1
+numpy==2.5.3
+pillow==12.3.0
+qrcode==8.2
+reportlab==5.0.1
+sqlparse==0.6.0
+tzdata==2026.3
+flask
+flask-cors
+gunicorn
+opencv-python-headless
+psycopg[binary]
+dj-database-url
