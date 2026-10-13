@@ -2,10 +2,10 @@ import json
 import random
 import uuid as uuid_lib
 
-from django.db import IntegrityError
 from django.contrib.auth.hashers import make_password, check_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db import IntegrityError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -49,6 +49,7 @@ def aluno_json(aluno):
 def materia_json(materia):
 	return {
 		'id': materia.id,
+		'professor_id': materia.professor_id,
 		'nome': materia.nome,
 		'descricao': materia.descricao,
 		'created_at': materia.created_at.isoformat(),
@@ -56,7 +57,7 @@ def materia_json(materia):
 	}
 
 def resposta(request, data, status=200):
-	response = JsonResponse(data, status=status)
+	response = JsonResponse(data, status=status, safe=False)
 	response['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
 	response['Access-Control-Allow-Headers'] = 'Content-Type'
 	response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
@@ -191,14 +192,20 @@ def materias(request, materia_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
 	if request.method == 'GET':
-		return resposta(request, {'materias': [materia_json(m) for m in Materia.objects.all()]})
+		qs = Materia.objects.all().order_by('nome')
+		pid = request.GET.get('professor_id')
+		if pid and pid.isdigit():
+			qs = qs.filter(professor_id=pid)
+		return resposta(request, [materia_json(m) for m in qs])
 	if request.method == 'POST':
 		try:
 			body = dados(request)
 			nome = str(body.get('nome', '')).strip()
 			if not nome:
 				return resposta(request, {'error': 'Nome da matéria é obrigatório.'}, 400)
-			materia = Materia.objects.create(nome=nome, descricao=str(body.get('descricao', '')).strip())
+			pid = body.get('professor_id')
+			prof_id = int(pid) if str(pid).isdigit() and Professor.objects.filter(pk=int(pid)).exists() else None
+			materia = Materia.objects.create(professor_id=prof_id, nome=nome, descricao=str(body.get('descricao', '')).strip())
 		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
 			return resposta(request, {'error': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
 		return resposta(request, materia_json(materia), 201)
