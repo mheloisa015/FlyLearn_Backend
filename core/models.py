@@ -38,6 +38,7 @@ class Materia(models.Model):
 
 
 class Turma(models.Model):
+    professor = models.ForeignKey(Professor, on_delete=models.SET_NULL, db_column='professor_id', related_name='turmas', null=True, blank=True)
     ano = models.PositiveSmallIntegerField()
     disciplina = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)

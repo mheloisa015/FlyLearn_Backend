@@ -40,6 +40,21 @@ def _professor_id(request, data=None):
         return int(bruto)
     except (TypeError, ValueError):
         return 1
+def _json_erros(view):
+    """Se a view quebrar (ex.: coluna inexistente no banco), devolve JSON com o motivo
+    em vez de uma página 500 sem informação."""
+    import functools, logging
+
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        try:
+            return view(request, *args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).exception('Erro em %s', view.__name__)
+            return JsonResponse({'erro': f'Erro interno: {type(exc).__name__}: {exc}'}, status=500)
+    return wrapper
+
+
 def turma_json(turma):
 	return {'id': turma.id, 'ano': turma.ano, 'disciplina': turma.disciplina}
 
@@ -52,8 +67,8 @@ def materia_json(materia):
 		'professor_id': materia.professor_id,
 		'nome': materia.nome,
 		'descricao': materia.descricao,
-		'created_at': materia.created_at.isoformat(),
-		'updated_at': materia.updated_at.isoformat(),
+		'created_at': materia.created_at.isoformat() if materia.created_at else None,
+		'updated_at': materia.updated_at.isoformat() if materia.updated_at else None,
 	}
 
 def resposta(request, data, status=200):
@@ -115,26 +130,33 @@ def login(request):
 #TURMAS
 @csrf_exempt
 @require_http_methods(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+@_json_erros
 def turmas(request, turma_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
 	if request.method == 'GET':
-		return resposta(request, {'turmas': [turma_json(t) for t in Turma.objects.all()], 'alunos': [aluno_json(a) for a in Aluno.objects.all()]})
+		ts, als = Turma.objects.all(), Aluno.objects.all()
+		pid = request.GET.get('professor_id')
+		if pid and pid.isdigit():
+			ts, als = ts.filter(professor_id=pid), als.filter(turma__professor_id=pid)
+		return resposta(request, {'turmas': [turma_json(t) for t in ts], 'alunos': [aluno_json(a) for a in als]})
 	if request.method == 'POST':
 		try:
 			body = dados(request)
 			ano = int(body.get('ano', 0))
 			disciplina = str(body.get('disciplina', '')).strip()
 			if not 1 <= ano <= 12 or not disciplina:
-				return resposta(request, {'error': 'Ano e disciplina são obrigatórios.'}, 400)
-			turma = Turma.objects.create(ano=ano, disciplina=disciplina)
+				return resposta(request, {'erro': 'Ano e disciplina são obrigatórios.'}, 400)
+			pid = body.get('professor_id')
+			prof_id = int(pid) if str(pid).isdigit() and Professor.objects.filter(pk=int(pid)).exists() else None
+			turma = Turma.objects.create(professor_id=prof_id, ano=ano, disciplina=disciplina)
 		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
-			return resposta(request, {'error': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
+			return resposta(request, {'erro': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
 		return resposta(request, turma_json(turma), 201)
 	try:
 		turma = Turma.objects.get(pk=turma_id)
 	except Turma.DoesNotExist:
-		return resposta(request, {'error': 'Turma não encontrada.'}, 404)
+		return resposta(request, {'erro': 'Turma não encontrada.'}, 404)
 	if request.method == 'DELETE':
 		turma.delete()
 		return resposta(request, {})
@@ -143,15 +165,16 @@ def turmas(request, turma_id=None):
 		turma.ano = int(body.get('ano', turma.ano))
 		turma.disciplina = str(body.get('disciplina', turma.disciplina)).strip()
 		if not 1 <= turma.ano <= 12 or not turma.disciplina:
-			return resposta(request, {'error': 'Ano e disciplina são obrigatórios.'}, 400)
+			return resposta(request, {'erro': 'Ano e disciplina são obrigatórios.'}, 400)
 		turma.save()
 	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
-		return resposta(request, {'error': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
+		return resposta(request, {'erro': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
 	return resposta(request, turma_json(turma))
 
 #ALUNOS
 @csrf_exempt
 @require_http_methods(['POST', 'PUT', 'DELETE', 'OPTIONS'])
+@_json_erros
 def alunos(request, aluno_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
@@ -162,15 +185,15 @@ def alunos(request, aluno_id=None):
 			nome = str(body.get('nome', '')).strip()
 			ra = str(body.get('ra', '')).strip()
 			if not nome or not ra:
-				return resposta(request, {'error': 'Nome e RA são obrigatórios.'}, 400)
+				return resposta(request, {'erro': 'Nome e RA são obrigatórios.'}, 400)
 			aluno = Aluno.objects.create(turma=turma, nome=nome, ra=ra, email=str(body.get('email', '')).strip())
 		except (ValueError, TypeError, json.JSONDecodeError, Turma.DoesNotExist, IntegrityError):
-			return resposta(request, {'error': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
+			return resposta(request, {'erro': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
 		return resposta(request, aluno_json(aluno), 201)
 	try:
 		aluno = Aluno.objects.get(pk=aluno_id)
 	except Aluno.DoesNotExist:
-		return resposta(request, {'error': 'Aluno não encontrado.'}, 404)
+		return resposta(request, {'erro': 'Aluno não encontrado.'}, 404)
 	if request.method == 'DELETE':
 		aluno.delete()
 		return resposta(request, {})
@@ -182,12 +205,13 @@ def alunos(request, aluno_id=None):
 		aluno.email = str(body.get('email', aluno.email)).strip()
 		aluno.save()
 	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
-		return resposta(request, {'error': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
+		return resposta(request, {'erro': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
 	return resposta(request, aluno_json(aluno))
 
 #MATERIAS
 @csrf_exempt
 @require_http_methods(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+@_json_erros
 def materias(request, materia_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
@@ -202,17 +226,17 @@ def materias(request, materia_id=None):
 			body = dados(request)
 			nome = str(body.get('nome', '')).strip()
 			if not nome:
-				return resposta(request, {'error': 'Nome da matéria é obrigatório.'}, 400)
+				return resposta(request, {'erro': 'Nome da matéria é obrigatório.'}, 400)
 			pid = body.get('professor_id')
 			prof_id = int(pid) if str(pid).isdigit() and Professor.objects.filter(pk=int(pid)).exists() else None
 			materia = Materia.objects.create(professor_id=prof_id, nome=nome, descricao=str(body.get('descricao', '')).strip())
 		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
-			return resposta(request, {'error': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
+			return resposta(request, {'erro': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
 		return resposta(request, materia_json(materia), 201)
 	try:
 		materia = Materia.objects.get(pk=materia_id)
 	except Materia.DoesNotExist:
-		return resposta(request, {'error': 'Matéria não encontrada.'}, 404)
+		return resposta(request, {'erro': 'Matéria não encontrada.'}, 404)
 	if request.method == 'DELETE':
 		materia.delete()
 		return resposta(request, {})
@@ -221,10 +245,10 @@ def materias(request, materia_id=None):
 		materia.nome = str(body.get('nome', materia.nome)).strip()
 		materia.descricao = str(body.get('descricao', materia.descricao)).strip()
 		if not materia.nome:
-			return resposta(request, {'error': 'Nome da matéria é obrigatório.'}, 400)
+			return resposta(request, {'erro': 'Nome da matéria é obrigatório.'}, 400)
 		materia.save()
 	except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
-		return resposta(request, {'error': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
+		return resposta(request, {'erro': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
 	return resposta(request, materia_json(materia))
 
 
