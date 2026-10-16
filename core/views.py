@@ -426,10 +426,7 @@ def versao_detalhe(request, pk):
 LETRAS = 'ABCDE'
 #VERSÃO COMPLETA DA PROVA
 @require_http_methods(['GET'])
-def versao_completa(request, pk):
-    """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
-    (não só os ids), mais a letra da alternativa correta de cada questão."""
-    v = get_object_or_404(VersaoProva, pk=pk)
+def _versao_completa_json(v):
     prova = v.prova
     materia = prova.materia if prova else None
     gabarito_por_pq = {g.prova_questao_id: g.alternativa_id for g in Gabarito.objects.filter(versao_prova=v)}
@@ -449,13 +446,34 @@ def versao_completa(request, pk):
             'alternativas': [a.texto for a in alts],
             'correta_letra': correta_letra,
         })
-
-    return JsonResponse({
+    return {
         'id': v.id, 'codigo': v.codigo, 'uuid': str(v.uuid),
         'prova_nome': prova.nome if prova else '', 'prova_descricao': prova.descricao if prova else '',
         'materia_nome': materia.nome if materia else '',
         'itens': itens,
-    })
+    }
+
+
+@require_http_methods(['GET'])
+def versao_completa(request, pk):
+    """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
+    (não só os ids), mais a letra da alternativa correta de cada questão."""
+    return JsonResponse(_versao_completa_json(get_object_or_404(VersaoProva, pk=pk)))
+
+
+@require_http_methods(['GET'])
+@_json_erros
+def versao_por_uuid(request, uuid):
+    """Mesma resposta de versao_completa, achada pelo UUID do QR da folha (com ou sem hífens).
+    É daqui que o leitor tira a versão da prova e o gabarito."""
+    try:
+        uid = uuid_lib.UUID(uuid)
+    except ValueError:
+        return _erro('QR inválido.')
+    v = VersaoProva.objects.filter(uuid=uid).first()
+    if not v:
+        return _erro('Essa versão de prova não existe neste sistema.', 404)
+    return JsonResponse(_versao_completa_json(v))
 
 #APLICAR PROVA
 @csrf_exempt
