@@ -476,40 +476,133 @@ def versao_por_uuid(request, uuid):
     return JsonResponse(_versao_completa_json(v))
 
 #APLICAR PROVA
+def _parse_data_aplicacao(valor):
+    if not valor:
+        return timezone.now()
+    texto = str(valor).strip()
+    d = parse_date(texto) if len(texto) <= 10 else None
+    if d:
+        return dt.datetime.combine(d, dt.time(12, 0), tzinfo=dt.timezone.utc)
+    momento = parse_datetime(texto)
+    if momento is None:
+        raise ValueError('Data de aplicação inválida.')
+    return momento if timezone.is_aware(momento) else timezone.make_aware(momento)
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
+@_json_erros
 def aplicar_prova(request, pk):
-    """Cria uma avaliação por aluno da turma, distribuindo as versões existentes da prova."""
     prova = get_object_or_404(Prova, pk=pk)
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
-    turma_id = data.get('turma_id')
-    turma = Turma.objects.filter(pk=turma_id).first()
+    turma = Turma.objects.filter(pk=data.get('turma_id') or 0).first()
     if not turma:
         return _erro('Escolha uma turma válida.', campo='turma_id')
-    versoes = list(prova.versoes.all())
+    versoes = list(prova.versoes.order_by('id'))
     if not versoes:
         return _erro('Gere ao menos uma versão desta prova antes de aplicar.')
-    alunos_turma = list(Aluno.objects.filter(turma_id=turma_id).order_by('id'))
+
+    alunos_qs = Aluno.objects.filter(turma_id=turma.id)
+    if data.get('aluno_id'):
+        alunos_qs = alunos_qs.filter(pk=data['aluno_id'])
+        if not alunos_qs.exists():
+            return _erro('Esse aluno não pertence à turma escolhida.', campo='aluno_id')
+    alunos_turma = list(alunos_qs.order_by('id'))
     if not alunos_turma:
         return _erro('Essa turma ainda não tem alunos. Cadastre em Turmas e alunos.')
 
-    data_aplicacao = data.get('data_aplicacao') or None
-    criadas = []
-    for i, aluno in enumerate(alunos_turma):
-        av = Avaliacao.objects.create(versao_prova=versoes[i % len(versoes)], aluno=aluno,
-                                       data_aplicacao=data_aplicacao, status='aplicada')
-        criadas.append(av)
-    return JsonResponse([a.to_dict() for a in criadas], safe=False, status=201)
+    try:
+        data_aplicacao = _parse_data_aplicacao(data.get('data_aplicacao'))
+    except ValueError as exc:
+        return _erro(str(exc), campo='data_aplicacao')
 
+    pendentes = set(Avaliacao.objects.filter(versao_prova__prova=prova, status='aplicada',
+                                             aluno_id__in=[a.id for a in alunos_turma])
+                    .values_list('aluno_id', flat=True))
+    # o rodízio continua de onde parou: aplicar de novo não manda sempre a versão 1
+    deslocamento = Avaliacao.objects.filter(versao_prova__prova=prova).count()
+    criadas, ignoradas = [], 0
+    with transaction.atomic():
+        for aluno in alunos_turma:
+            if aluno.id in pendentes:
+                ignoradas += 1
+                continue
+            versao = versoes[(deslocamento + len(criadas)) % len(versoes)]
+            criadas.append(Avaliacao.objects.create(versao_prova=versao, aluno=aluno,
+                                                    data_aplicacao=data_aplicacao, status='aplicada'))
+    return JsonResponse({'criadas': [a.to_dict(com_respostas=False) for a in criadas],
+                         'ignoradas': ignoradas}, status=201)
+
+#AVALIAÇÕES APLICADAS
 @require_http_methods(['GET'])
+@_json_erros
 def avaliacoes(request):
-    qs = Avaliacao.objects.all()
-    versao_id = request.GET.get('versao_prova_id')
-    aluno_id = request.GET.get('aluno_id')
-    if versao_id:
-        qs = qs.filter(versao_prova_id=versao_id)
-    if aluno_id:
-        qs = qs.filter(aluno_id=aluno_id)
-    return JsonResponse([a.to_dict() for a in qs.order_by('-id')], safe=False)
+    qs = Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova')
+    for param, campo in (('versao_prova_id', 'versao_prova_id'), ('aluno_id', 'aluno_id'),
+                         ('turma_id', 'aluno__turma_id'), ('prova_id', 'versao_prova__prova_id'),
+                         ('professor_id', 'versao_prova__prova__professor_id'), ('status', 'status')):
+        valor = request.GET.get(param)
+        if valor:
+            qs = qs.filter(**{campo: valor})
+    return JsonResponse([a.to_dict(com_respostas=False) for a in qs.order_by('-id')], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'DELETE'])
+@_json_erros
+def avaliacao_detalhe(request, pk):
+    av = get_object_or_404(Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'), pk=pk)
+    if request.method == 'DELETE':
+        av.delete()
+        return JsonResponse({'ok': True})
+    return JsonResponse(av.to_dict())
+
+#SALVAR RESULTADO DA LEITURA (folha lida pelo celular)
+@csrf_exempt
+@require_http_methods(['POST'])
+@_json_erros
+def salvar_resultado(request, pk):
+    av = get_object_or_404(Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'), pk=pk)
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    letras = data.get('respostas')
+    if not isinstance(letras, list):
+        return _erro('Envie a lista de respostas lidas.', campo='respostas')
+
+    versao = av.versao_prova
+    uuid_folha = str(data.get('uuid') or '').replace('-', '').lower()
+    if uuid_folha and uuid_folha != versao.uuid.hex:
+        return _erro(f'Esta folha é de outra versão da prova. A avaliação de {av.aluno.nome} é da '
+                     f'versão {versao.codigo}. Confira se escolheu o aluno certo.', 409, 'uuid')
+
+    itens = list(versao.itens.select_related('questao').order_by('ordem'))
+    if not itens:
+        return _erro('Esta versão não tem questões.')
+    if len(letras) != len(itens):
+        return _erro(f'A leitura trouxe {len(letras)} respostas, mas a prova tem {len(itens)} questões.',
+                     campo='respostas')
+    gabarito = {g.prova_questao_id: g.alternativa_id for g in Gabarito.objects.filter(versao_prova=versao)}
+
+    with transaction.atomic():
+        av.respostas.all().delete()
+        acertos = 0
+        for item, letra in zip(itens, letras):
+            letra = str(letra or '').strip().upper()
+            alts = list(item.questao.alternativas.order_by('ordem_original'))   # mesma ordem de versao_completa
+            # len(letra) == 1: sem isso '' e 'BC' passariam em `in 'ABCDE'` (substring) e virariam A/B
+            idx = LETRAS.index(letra) if len(letra) == 1 and letra in LETRAS else None
+            marcada = alts[idx] if idx is not None and idx < len(alts) else None
+            correta = bool(marcada and gabarito.get(item.id) == marcada.id)
+            acertos += correta
+            Resposta.objects.create(avaliacao=av, prova_questao=item, alternativa=marcada, correta=correta)
+        av.nota = round(acertos * 10.0 / len(itens), 2)
+        av.status = 'corrigida'
+        av.data_correcao = timezone.now()
+        av.save()
+
+    corpo = av.to_dict(com_respostas=False)
+    corpo.update({'acertos': acertos, 'total': len(itens)})
+    return JsonResponse(corpo)
