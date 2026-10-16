@@ -194,14 +194,24 @@ class Avaliacao(models.Model):
         db_table = 'avaliacao'
         managed = False
 
-    def to_dict(self):
-        return {
+    def to_dict(self, com_respostas=True):
+        v= self.versao_prova
+        prova = v.prova if v else None
+        aluno = self.aluno
+        turma = aluno.turma if aluno else None
+        d = {
             'id': self.id, 'versao_prova_id': self.versao_prova_id, 'aluno_id': self.aluno_id,
             'data_aplicacao': self.data_aplicacao.isoformat() if self.data_aplicacao else None,
             'status': self.status, 'nota': self.nota,
             'data_correcao': self.data_correcao.isoformat() if self.data_correcao else None,
-            'respostas': [r.to_dict() for r in self.respostas.all()],
+            'aluno_nome': aluno.nome if aluno else '', 'aluno_ra': aluno.ra if aluno else '',
+            'turma_id': turma.id if turma else None, 'turma_nome': str(turma) if turma else '',
+            'prova_id': prova.id if prova else None, 'prova_nome': prova.nome if prova else '',
+            'versao_codigo': v.codigo if v else '', 'versao_uuid': str(v.uuid) if v else None,
         }
+        if com_respostas:
+            d['respostas'] = [r.to_dict() for r in self.respostas.all()]
+        return d
 
 
 class Resposta(models.Model):
