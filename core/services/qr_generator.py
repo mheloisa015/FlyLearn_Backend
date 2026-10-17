@@ -6,7 +6,7 @@ from io import BytesIO
 
 import qrcode
 
-from .sheet_layout import PAYLOAD_PREFIX
+PAYLOAD_PREFIX = "FL1"  # antes vinha de sheet_layout.py (removido: só servia ao gerador de PDF por bolhas)
 
 
 @dataclass(frozen=True)
@@ -22,25 +22,8 @@ def generate_identifier() -> uuid.UUID:
 
 
 def build_payload(identifier: uuid.UUID | str) -> str:
-    """Texto gravado no QR: prefixo + UUID em 32 caracteres hexadecimais MAIÚSCULOS, sem hífens.
-
-    Maiúsculas + dígitos deixam o QR no modo "alfanumérico", que é mais compacto
-    (25x25 módulos em vez de 29x29) e, portanto, mais fácil de ler numa foto.
-    Aceita o UUID como objeto ou texto (com ou sem hífens); levanta ValueError se for inválido.
-    """
+    """Texto gravado no QR: prefixo + UUID em 32 caracteres hexadecimais MAIÚSCULOS, sem hífens."""
     return f"{PAYLOAD_PREFIX}:{uuid.UUID(str(identifier)).hex.upper()}"
-
-
-def qr_matrix(payload: str) -> list[list[bool]]:
-    """Matriz de módulos (True = preto), sem borda. O exam_generator usa para desenhar no PDF."""
-    qr = qrcode.QRCode(
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=1,
-        border=0,
-    )
-    qr.add_data(payload)
-    qr.make(fit=True)
-    return qr.get_matrix()
 
 
 def qr_png_bytes(payload: str, box_size: int = 10) -> bytes:

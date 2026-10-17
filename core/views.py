@@ -9,7 +9,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError
 from django.utils import timezone                         
 from django.utils.dateparse import parse_date, parse_datetime
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -19,6 +19,7 @@ from .models import (
     Aluno, Alternativa, Avaliacao, Gabarito, Materia, Prova, ProvaQuestao,
     Professor, Questao, Resposta, Turma, VersaoProva,
 )
+from .services.qr_generator import build_payload, qr_png_bytes
 
 
 # monta a resposta de erro que o frontend recebe
@@ -460,6 +461,16 @@ def versao_completa(request, pk):
     """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
     (não só os ids), mais a letra da alternativa correta de cada questão."""
     return JsonResponse(_versao_completa_json(get_object_or_404(VersaoProva, pk=pk)))
+
+
+@require_http_methods(['GET'])
+def versao_qr(request, pk):
+    """PNG do QR code dessa versão (payload = FL1:<uuid em hex>). O frontend
+    coloca essa imagem na folha da prova que ele mesmo imprime."""
+    v = get_object_or_404(VersaoProva, pk=pk)
+    payload = build_payload(v.uuid)
+    png = qr_png_bytes(payload, box_size=6)
+    return HttpResponse(png, content_type='image/png')
 
 
 @require_http_methods(['GET'])
