@@ -426,7 +426,6 @@ def versao_detalhe(request, pk):
 
 LETRAS = 'ABCDE'
 #VERSÃO COMPLETA DA PROVA
-@require_http_methods(['GET'])
 def _versao_completa_json(v):
     prova = v.prova
     materia = prova.materia if prova else None
