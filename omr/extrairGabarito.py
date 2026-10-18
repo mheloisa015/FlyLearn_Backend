@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 import marcadores as mk
-from omr_config import CANVAS_H, CANVAS_W, LAYOUTS, QUANTIDADES, RAIO_ANEL
+from omr_config import CANVAS_H, CANVAS_W, LAYOUTS, QUANTIDADES
 
 Folha = namedtuple("Folha", "recorte cinza_norm matriz pontos score_aneis n_candidatos n_questoes")
 
@@ -20,18 +20,18 @@ _DESTINO = np.float32([[0, 0], [CANVAS_W - 1, 0], [CANVAS_W - 1, CANVAS_H - 1], 
 TOLERANCIA_RAIO = 3        # px: o raio real do anel pode diferir de RAIO_ANEL (calibração imperfeita)
 
 
-def _pontos_dos_aneis(centros, delta=0):
+def _pontos_dos_aneis(centros, raio, delta=0):
     """Pontos (x, y) sobre o anel de cada bolha: usados para conferir orientação/posição."""
     pts = []
     for cx, cy in centros:
         for ang in np.linspace(0, 2 * np.pi, 24, endpoint=False):
-            pts.append((cx + (RAIO_ANEL - 1 + delta) * np.cos(ang), cy + (RAIO_ANEL - 1 + delta) * np.sin(ang)))
+            pts.append((cx + (raio + delta) * np.cos(ang), cy + (raio + delta) * np.sin(ang)))
     return np.round(np.array(pts)).astype(int)
 
 
 # por modelo de folha (10 ou 20 questões): um conjunto de pontos para cada raio testado
 _ANEIS = {
-    n: [_pontos_dos_aneis(lay.centros, d) for d in range(-TOLERANCIA_RAIO, TOLERANCIA_RAIO + 1)]
+    n: [_pontos_dos_aneis(lay.centros, lay.raio_anel, d) for d in range(-TOLERANCIA_RAIO, TOLERANCIA_RAIO + 1)]
     for n, lay in LAYOUTS.items()
 }
 

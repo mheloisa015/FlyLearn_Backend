@@ -1,52 +1,80 @@
-"""Configuração do layout das folhas de respostas (coordenadas no "canvas" 1000 x 1323).
+"""Configuração do layout das folhas de respostas.
 
-O canvas é a folha já endireitada (homografia a partir dos 4 marcadores quadrados dos cantos).
-Existem dois modelos de folha: 10 questões (2 colunas x 5 linhas) e 20 questões (2 colunas x 10 linhas).
-As colunas A..E são as mesmas nos dois; só muda a quantidade e a posição das linhas.
+A folha é gerada no front (app.js -> folhaRespostasPgApi), em A4, com medidas em mm. Este arquivo
+deriva TUDO dessas mesmas medidas, então se o layout do front mudar, mude as constantes de "medidas
+do front" abaixo (e só elas).
+
+O "canvas" é a folha já endireitada (homografia a partir dos 4 marcadores quadrados dos cantos).
+Os pontos de referência são os CENTROS dos marcadores: (0,0) = centro do marcador superior esquerdo e
+(CANVAS_W-1, CANVAS_H-1) = centro do marcador inferior direito. A escala é a mesma em x e y
+(PX_POR_MM), então as bolhas continuam circulares no canvas.
+
+Existem dois modelos: 10 questões (2 colunas x 5 linhas) e 20 questões (2 colunas x 10 linhas).
 """
 from collections import namedtuple
 
-CANVAS_W = 1000
-CANVAS_H = 1323
+# ----------------------------------------------------------------------------------------------
+# Medidas do front (mm, página A4) — copiadas de app.js / folhaRespostasPgApi
+# ----------------------------------------------------------------------------------------------
+MARCADOR_X = (11.5, 198.5)     # centros dos quadrados 7x7 mm (left 8 / 195 + 3,5)
+MARCADOR_Y = (11.5, 285.5)     # (top 8 / 282 + 3,5)
 
-# Quantidades de questões que o sistema sabe ler (cada uma tem um modelo de folha).
+TOPO_LINHAS = 126.0            # top0
+X0_COLUNAS = (14.0, 108.0)     # x0 de cada coluna de questões
+X_PRIMEIRA_BOLHA = 21.0        # x0 + 21 = centro da bolha A
+PASSO_BOLHA = 14.0             # distância A->B->C...
+PASSO_LINHA = {10: 18.0, 20: 11.5}      # pitch
+DIAMETRO_BOLHA = {10: 10.0, 20: 8.0}    # dn (diâmetro externo da bolha impressa)
+BORDA_BOLHA = 0.3              # espessura do traço do anel
+
 QUANTIDADES = (10, 20)
 
-# Posição relativa (fração do canvas) do centro das bolhas.
-COLUNAS_ESQUERDA = [0.0840, 0.1656, 0.2476, 0.3290, 0.4114]   # 1ª metade das questões (A..E)
-COLUNAS_DIREITA = [0.6014, 0.6840, 0.7645, 0.8459, 0.9289]    # 2ª metade das questões (A..E)
+# ----------------------------------------------------------------------------------------------
+# Canvas
+# ----------------------------------------------------------------------------------------------
+CANVAS_W = 1000
+PX_POR_MM = (CANVAS_W - 1) / (MARCADOR_X[1] - MARCADOR_X[0])
+CANVAS_H = int(round(PX_POR_MM * (MARCADOR_Y[1] - MARCADOR_Y[0])) + 1)    # ~1466
 
-LINHAS_POR_QTD = {
-    10: [0.6076, 0.6720, 0.7368, 0.8020, 0.8674],                                          # 5 linhas por coluna
-    20: [0.4950, 0.5373, 0.5796, 0.6219, 0.6643, 0.7066, 0.7489, 0.7912, 0.8336, 0.8759],  # 10 linhas por coluna
-}
 
-# Lado do quadrado (px) usado para medir o preenchimento de cada bolha.
-# Na folha de 20 as linhas ficam mais juntas (~56 px) e o tracejado entre elas está a ~28 px do centro:
-# o campo é menor para o disco de leitura não encostar na linha tracejada.
-LADO_CAMPO_POR_QTD = {10: 60, 20: 52}
+def _x(mm):
+    return (mm - MARCADOR_X[0]) * PX_POR_MM
+
+
+def _y(mm):
+    return (mm - MARCADOR_Y[0]) * PX_POR_MM
+
+
+# Raio (px do canvas) da linha do anel impresso de cada bolha.
+RAIO_ANEL_POR_QTD = {n: (DIAMETRO_BOLHA[n] / 2 - BORDA_BOLHA / 2) * PX_POR_MM for n in QUANTIDADES}
+RAIO_ANEL = RAIO_ANEL_POR_QTD[10]   # compatibilidade
+
+# Fração do raio do anel usada como disco de leitura (fica dentro do anel, sem encostar nele).
+FRACAO_DISCO = 0.80
+LADO_CAMPO_POR_QTD = {n: int(2 * round(RAIO_ANEL_POR_QTD[n] * FRACAO_DISCO)) for n in QUANTIDADES}
 LADO_CAMPO = LADO_CAMPO_POR_QTD[10]   # compatibilidade
 
-# Raio (px do canvas) do anel impresso de cada bolha (medido na folha real: ~20-21 px).
-RAIO_ANEL = 20
-
-Layout = namedtuple("Layout", "n_questoes por_coluna centros lado_campo")
+Layout = namedtuple("Layout", "n_questoes por_coluna centros lado_campo raio_anel")
 
 
 def _centros(n):
     """Centro (x, y) de cada bolha, na ordem questao*5 + alternativa."""
     por_coluna = n // 2
-    linhas = LINHAS_POR_QTD[n]
+    passo = PASSO_LINHA[n]
     centros = []
     for questao in range(n):
-        colunas = COLUNAS_DIREITA if questao >= por_coluna else COLUNAS_ESQUERDA
-        y = linhas[questao % por_coluna] * CANVAS_H
+        coluna = 1 if questao >= por_coluna else 0
+        linha = questao % por_coluna
+        y_mm = TOPO_LINHAS + linha * passo + passo / 2 - 1
         for alternativa in range(5):
-            centros.append((colunas[alternativa] * CANVAS_W, y))
+            x_mm = X0_COLUNAS[coluna] + X_PRIMEIRA_BOLHA + PASSO_BOLHA * alternativa
+            centros.append((_x(x_mm), _y(y_mm)))
     return centros
 
 
-LAYOUTS = {n: Layout(n, n // 2, _centros(n), LADO_CAMPO_POR_QTD[n]) for n in QUANTIDADES}
+LAYOUTS = {
+    n: Layout(n, n // 2, _centros(n), LADO_CAMPO_POR_QTD[n], RAIO_ANEL_POR_QTD[n]) for n in QUANTIDADES
+}
 
 
 def layout(n):
@@ -64,10 +92,10 @@ def campos(n):
 
 CENTROS = LAYOUTS[10].centros   # compatibilidade com código antigo (folha de 10)
 
-# QR de identificação da versão da prova (coordenadas do canvas) — mesma posição nas duas folhas.
-# Se o QR não for lido por essa posição, qr_util.ler_qr procura o QR na foto inteira.
-QR_CENTRO = (499.0, 1277.0)
-QR_LADO = 80.0
+# QR de identificação da versão da prova — mesma posição nas duas folhas (app.js: .qr left 93 / top 246,
+# caixa 24 mm, imagem 21 mm). Se o QR não for lido por essa posição, qr_util.ler_qr procura na foto inteira.
+QR_CENTRO = (_x(93 + 12), _y(246 + 12))
+QR_LADO = 21 * PX_POR_MM
 
 # Parâmetros de detecção de marcadores (não usados por marcadores.py atualmente).
 MARCADOR_AREA_MIN_FRAC = 0.00005

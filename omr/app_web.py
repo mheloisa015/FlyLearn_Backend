@@ -12,7 +12,7 @@ import corretor
 import extrairGabarito as exG
 import gerar_folha
 import qr_util
-from omr_config import LAYOUTS, QUANTIDADES, RAIO_ANEL, campos as campos_de
+from omr_config import LAYOUTS, QUANTIDADES, campos as campos_de
 
 PASTA_OMR = Path(__file__).resolve().parent
 
@@ -75,14 +75,15 @@ def _ler_gabarito(bruto):
 def _imagem_debug(folha, linhas):
     """Canvas com as bolhas desenhadas: verde = lida como marcada, cinza = vazia."""
     img = folha.recorte.copy()
-    centros = LAYOUTS[folha.n_questoes].centros
+    lay = LAYOUTS[folha.n_questoes]
+    centros = lay.centros
     for q, linha in enumerate(linhas):
         letra = linha["resposta_detectada"]
         for a in range(5):
             cx, cy = centros[q * 5 + a]
             marcada = letra == "ABCDE"[a]
             cor = (0, 200, 0) if marcada else (160, 160, 160)
-            cv2.circle(img, (int(cx), int(cy)), int(RAIO_ANEL), cor, 3 if marcada else 1)
+            cv2.circle(img, (int(cx), int(cy)), int(lay.raio_anel), cor, 3 if marcada else 1)
     img = cv2.resize(img, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode() if ok else None
