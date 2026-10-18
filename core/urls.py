@@ -25,6 +25,7 @@ urlpatterns = [
 
     path('versoes/<int:pk>/', views.versao_detalhe, name='versao-detalhe'),
     path('versoes/<int:pk>/completa/', views.versao_completa, name='versao-completa'),
+    path('versoes/<int:pk>/qr.png', views.versao_qr, name='versao-qr'),
     path('versoes/uuid/<str:uuid>/', views.versao_por_uuid, name='versao-por-uuid'),
 
     path('avaliacoes/', views.avaliacoes, name='avaliacoes'),
