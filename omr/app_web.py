@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import pickle
 from pathlib import Path
 
 import cv2
@@ -13,18 +12,21 @@ import corretor
 import extrairGabarito as exG
 import gerar_folha
 import qr_util
-from omr_config import CENTROS, RAIO_ANEL
+from omr_config import LAYOUTS, QUANTIDADES, RAIO_ANEL, campos as campos_de
 
 PASTA_OMR = Path(__file__).resolve().parent
 
-with open(PASTA_OMR / "campos.pkl", "rb") as arquivo:
-    campos = pickle.load(arquivo)
+# campos de leitura e rótulos de cada modelo de folha (10 e 20 questões), calculados do omr_config.py
+CAMPOS = {n: campos_de(n) for n in QUANTIDADES}
+RESP = {n: [f"{q}-{a}" for q in range(1, n + 1) for a in "ABCDE"] for n in QUANTIDADES}
 
-with open(PASTA_OMR / "resp.pkl", "rb") as arquivo:
-    resp = pickle.load(arquivo)
+# gabarito de teste: usado só quando o front não manda o gabarito (repete o padrão até completar n questões)
+_PADRAO_TESTE = ["A", "C", "B", "D", "A", "B", "C", "E", "A", "D"]
 
-# gabarito de teste: usado só quando o front não manda o gabarito
-respostaCorreta = ["1-A", "2-C", "3-B", "4-D", "5-A", "6-B", "7-C", "8-E", "9-A", "10-D"]
+
+def gabarito_teste(n):
+    return [f"{i + 1}-{_PADRAO_TESTE[i % len(_PADRAO_TESTE)]}" for i in range(n)]
+
 
 # bolha vazia já tem 10-22% de tinta (a letra impressa); preenchida passa de ~80%
 LIMIAR_PREENCHIMENTO = 20   # % de tinta no disco da bolha p/ contar como marcada (rabiscos ~28-41%, vazia <10%)
@@ -54,28 +56,30 @@ def health():
 
 
 def _ler_gabarito(bruto):
-    """Converte '["A","C",...]' em ['1-A','2-C',...]. Retorna None se invalido."""
+    """Converte '["A","C",...]' em ['1-A','2-C',...]. Retorna (gabarito, n) ou (None, None) se inválido.
+    Sem gabarito no pedido devolve (None, 0): aí vale o gabarito de teste do modelo de folha detectado."""
     if not bruto:
-        return respostaCorreta
+        return None, 0
     try:
         letras = json.loads(bruto)
     except ValueError:
-        return None
-    if not isinstance(letras, list) or len(letras) != len(respostaCorreta):
-        return None
+        return None, None
+    if not isinstance(letras, list) or len(letras) not in QUANTIDADES:
+        return None, None
     letras = [str(l).strip().upper() for l in letras]
     if any(l not in ("A", "B", "C", "D", "E") for l in letras):
-        return None
-    return [f"{i + 1}-{l}" for i, l in enumerate(letras)]
+        return None, None
+    return [f"{i + 1}-{l}" for i, l in enumerate(letras)], len(letras)
 
 
 def _imagem_debug(folha, linhas):
     """Canvas com as bolhas desenhadas: verde = lida como marcada, cinza = vazia."""
     img = folha.recorte.copy()
+    centros = LAYOUTS[folha.n_questoes].centros
     for q, linha in enumerate(linhas):
         letra = linha["resposta_detectada"]
         for a in range(5):
-            cx, cy = CENTROS[q * 5 + a]
+            cx, cy = centros[q * 5 + a]
             marcada = letra == "ABCDE"[a]
             cor = (0, 200, 0) if marcada else (160, 160, 160)
             cv2.circle(img, (int(cx), int(cy)), int(RAIO_ANEL), cor, 3 if marcada else 1)
@@ -90,11 +94,11 @@ def corrigir():
     if arquivo is None:
         return {"ok": False, "mensagem": "Nenhuma imagem recebida."}, 400
 
-    gabarito_correto = _ler_gabarito(request.form.get("gabarito"))
-    if gabarito_correto is None:
+    gabarito_correto, n_gabarito = _ler_gabarito(request.form.get("gabarito"))
+    if n_gabarito is None:
         return {
             "ok": False,
-            "mensagem": "Gabarito invalido. Envie uma lista JSON com 10 letras (A-E).",
+            "mensagem": "Gabarito invalido. Envie uma lista JSON com 10 ou 20 letras (A-E).",
         }, 400
 
     bytes_imagem = np.frombuffer(arquivo.read(), dtype=np.uint8)
@@ -110,7 +114,7 @@ def corrigir():
             imagem, (int(largura * escala), int(altura * escala)), interpolation=cv2.INTER_AREA
         )
 
-    folha, n_candidatos = exG.localizar_folha(imagem)
+    folha, n_candidatos = exG.localizar_folha(imagem)   # detecta sozinho: folha de 10 ou de 20 questões
 
     if folha is None:
         return {
@@ -122,11 +126,19 @@ def corrigir():
             "diagnostico": {"candidatos_a_marcador": n_candidatos},
         }
 
+    n = folha.n_questoes                      # 10 ou 20: modelo de folha que foi reconhecido na foto
+
+    # gabarito do pedido de outro tamanho (ex.: aluno de uma prova de 10, foto de folha de 20): o front
+    # recalcula a nota com o gabarito da versão lida no QR; aqui usamos o de teste só para ler as marcações
+    gabarito_compativel = gabarito_correto is not None and len(gabarito_correto) == n
+    if not gabarito_compativel:
+        gabarito_correto = gabarito_teste(n)
+
     imgTh = exG.binarizar(folha.recorte)
     linhas, resumo = corretor.avaliarRespostas(
         imgTh,
-        campos,
-        resp,
+        CAMPOS[n],
+        RESP[n],
         gabarito_correto,
         limiar=LIMIAR_PREENCHIMENTO,
         margem_dupla=MARGEM_DUPLA_MARCACAO,
@@ -140,7 +152,8 @@ def corrigir():
         "uuid": str(identificador) if identificador else None,
     }
 
-    resposta = {"ok": True, "linhas": linhas, "resumo": resumo, "qr": qr}
+    resposta = {"ok": True, "linhas": linhas, "resumo": resumo, "qr": qr,
+                "n_questoes": n, "gabarito_compativel": gabarito_compativel}
     if request.args.get("debug") or request.form.get("debug"):
         resposta["debug_img"] = _imagem_debug(folha, linhas)
         resposta["diagnostico"] = {
@@ -152,15 +165,21 @@ def corrigir():
 
 @app.route("/folha/<identificador>.pdf")
 def folha_pdf(identificador):
-    """PDF A4 da folha de respostas com o QR da versão (UUID com ou sem hífens)."""
+    """PDF A4 da folha de respostas com o QR da versão (UUID com ou sem hífens). Use ?n=10 ou ?n=20."""
     try:
         uid = gerar_folha.uuid_de_texto(identificador)
     except ValueError:
         return {"ok": False, "mensagem": "Identificador invalido."}, 400
     try:
-        pdf = gerar_folha.gerar_pdf_a4(uid)
+        n = int(request.args.get("n", 10))
+    except ValueError:
+        n = 0
+    if n not in QUANTIDADES:
+        return {"ok": False, "mensagem": "Use ?n=10 ou ?n=20 (quantidade de questoes da prova)."}, 400
+    try:
+        pdf = gerar_folha.gerar_pdf_a4(uid, n)
     except FileNotFoundError:
-        return {"ok": False, "mensagem": "folha_template.png nao encontrado no servidor (omr/)."}, 503
+        return {"ok": False, "mensagem": f"folha_template_{n}.png nao encontrado no servidor (omr/)."}, 503
     return Response(
         pdf,
         mimetype="application/pdf",
