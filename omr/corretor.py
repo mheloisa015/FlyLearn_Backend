@@ -13,13 +13,16 @@ def _mascara_disco(lado):
     return _MASCARAS[lado]
 
 
-def lerRespostas(imgTh, campos, resp, limiar=45, margem_dupla=15):
+def lerRespostas(imgTh, campos, resp, limiar=45, margem_dupla=15, n_questoes=None):
     """imgTh: imagem binária do canvas (tinta = 255). Cada campo é um quadrado (x, y, w, h)
     centrado numa bolha; só o disco interno conta. percentuais = % de tinta no disco.
-    Uma bolha VAZIA já tem ~10-22% por causa da letra impressa; preenchida passa de ~80%."""
+    Uma bolha VAZIA já tem ~10-22% por causa da letra impressa; preenchida passa de ~80%.
+    n_questoes: 10 ou 20; se None, é calculado pela quantidade de campos (5 por questão)."""
     resultado_por_questao = []
+    if n_questoes is None:
+        n_questoes = len(campos) // 5
 
-    for questao in range(10):
+    for questao in range(n_questoes):
         percentuais = []
 
         for alternativa in range(5):
@@ -65,7 +68,9 @@ def lerRespostas(imgTh, campos, resp, limiar=45, margem_dupla=15):
 def avaliarRespostas(
     imgTh, campos, resp, respostaCorreta, limiar=45, margem_dupla=15
 ):
-    leitura = lerRespostas(imgTh, campos, resp, limiar, margem_dupla)
+    leitura = lerRespostas(
+        imgTh, campos, resp, limiar, margem_dupla, n_questoes=len(respostaCorreta)
+    )
 
     linhas = []
     acertos = 0
