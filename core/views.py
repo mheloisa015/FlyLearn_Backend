@@ -76,6 +76,7 @@ def materia_json(materia):
 		'updated_at': materia.updated_at.isoformat() if materia.updated_at else None,
 	}
 
+QUANTIDADES_PROVA = (10, 20) 
 def resposta(request, data, status=200):
 	response = JsonResponse(data, status=status, safe=False)
 	response['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
@@ -374,6 +375,8 @@ def provas(request):
         return _erro('Cadastre uma matéria antes.', campo='materia_id')
     if not qids:
         return _erro('Escolha pelo menos uma questão.')
+    if len(set(qids)) not in QUANTIDADES_PROVA:
+        return _erro('A prova deve ter exatamente 10 ou 20 questões (a folha de respostas existe nesses dois modelos).')
     ativas = set(Questao.objects.filter(pk__in=qids, materia_id=materia_id, ativo=True).values_list('id', flat=True))
     if len(ativas) != len(set(qids)):
         return _erro('Uma ou mais questões escolhidas não existem ou não estão ativas nesta matéria.')
