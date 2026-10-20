@@ -31,4 +31,8 @@ urlpatterns = [
     path('avaliacoes/', views.avaliacoes, name='avaliacoes'),
     path('avaliacoes/<int:pk>/', views.avaliacao_detalhe, name='avaliacao-detalhe'),
     path('avaliacoes/<int:pk>/resultado/', views.salvar_resultado, name='avaliacao-resultado'),
+
+    path('recuperar-senha/', views.recuperar_senha, name='recuperar-senha'),
+    path('recuperar-senha/validar/', views.validar_token_senha, name='recuperar-senha-validar'),
+    path('redefinir-senha/', views.redefinir_senha, name='redefinir-senha'),
 ]

@@ -20,6 +20,7 @@ from .models import (
     Professor, Questao, Resposta, Turma, VersaoProva,
 )
 from .services.qr_generator import build_payload, qr_png_bytes
+from .services import recuperacao_senha as recup
 
 
 # monta a resposta de erro que o frontend recebe
@@ -132,6 +133,58 @@ def login(request):
     if not prof.ativo:
         return _erro('Esta conta está desativada.', 403)
     return JsonResponse(prof.to_dict())
+
+MSG_LINK_INVALIDO = 'Link inválido ou expirado. Solicite um novo.'
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def recuperar_senha(request):
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    email = str(data.get('email') or '').strip().lower()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return _erro('E-mail inválido.', campo='email')
+
+    # resposta SEMPRE igual, exista a conta ou não
+    if not recup.limite_excedido(email):
+        prof = Professor.objects.filter(email__iexact=email, ativo=True).first()
+        if prof:
+            recup.enviar_email_em_segundo_plano(prof)
+    return JsonResponse({'mensagem': 'Se esse e-mail estiver cadastrado, enviamos um link para redefinir a senha.'})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def validar_token_senha(request):
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    if not recup.professor_do_token(data.get('token')):
+        return _erro(MSG_LINK_INVALIDO, campo='token')
+    return JsonResponse({'valido': True})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def redefinir_senha(request):
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    senha = str(data.get('senha') or '')
+    if len(senha) < 6:
+        return _erro('A senha deve ter pelo menos 6 caracteres!', campo='senha')
+
+    prof = recup.professor_do_token(data.get('token'))
+    if not prof:
+        return _erro(MSG_LINK_INVALIDO, campo='token')
+
+    prof.senha = make_password(senha)
+    prof.save(update_fields=['senha', 'updated_at'])
+    return JsonResponse({'mensagem': 'Senha alterada com sucesso. Faça login com a nova senha.'})
+
 
 #TURMAS
 @csrf_exempt
