@@ -80,11 +80,24 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend' if EMAIL_HOST_USER
+    else 'django.core.mail.backends.console.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '1') == '1'
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or EMAIL_HOST_USER or 'FlyLearn <no-reply@flylearn.local>'
+
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5500').rstrip('/')
+
+RESET_SENHA_MAX_AGE = int(os.environ.get('RESET_SENHA_MAX_AGE', 30 * 60))  # validade do link
+RESET_SENHA_MAX_PEDIDOS = 3     # pedidos por e-mail...
+RESET_SENHA_JANELA = 60 * 60    # ...a cada 1 hora
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5500',
