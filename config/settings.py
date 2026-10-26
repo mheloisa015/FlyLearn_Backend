@@ -82,11 +82,17 @@ STATIC_URL = 'static/'
 
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-EMAIL_BACKEND = os.environ.get(
-    'EMAIL_BACKEND',
-    'django.core.mail.backends.smtp.EmailBackend' if EMAIL_HOST_USER
-    else 'django.core.mail.backends.console.EmailBackend',
-)
+# O plano gratuito do Render bloqueia SMTP (portas 25/465/587). Em produção use a
+# API HTTP do Brevo definindo BREVO_API_KEY; SMTP só serve para rodar localmente.
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
+if os.environ.get('EMAIL_BACKEND'):
+    EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
+elif BREVO_API_KEY:
+    EMAIL_BACKEND = 'core.email_backends.BrevoAPIBackend'
+elif EMAIL_HOST_USER:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '1') == '1'
