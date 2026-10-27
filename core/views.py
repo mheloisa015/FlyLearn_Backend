@@ -114,6 +114,70 @@ def professores(request):
     return JsonResponse(prof.to_dict(), status=201)
 
 
+# PERFIL DO PROFESSOR
+def _professor_json(prof):
+    d = prof.to_dict()
+    d['created_at'] = prof.created_at.isoformat() if prof.created_at else None
+    return d
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'PUT'])
+@_json_erros
+def professor_detalhe(request, pk):
+    prof = get_object_or_404(Professor, pk=pk)
+    if request.method == 'GET':
+        return JsonResponse(_professor_json(prof))
+
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    nome = str(data.get('nome') or '').strip()
+    email = str(data.get('email') or '').strip().lower()
+
+    if not nome:
+        return _erro('Por favor! Insira o nome completo!', campo='nome')
+    try:
+        validate_email(email)
+    except ValidationError:
+        return _erro('E-mail inválido.', campo='email')
+
+    if email != (prof.email or '').lower():
+        # trocar o e-mail (que é o login) exige confirmar a senha atual
+        if not check_password(str(data.get('senha_atual') or ''), prof.senha):
+            return _erro('Senha atual incorreta.', 401, 'senha_atual')
+        if Professor.objects.filter(email__iexact=email).exclude(pk=prof.pk).exists():
+            return _erro('Já existe uma conta com esse e-mail.', 409, 'email')
+        prof.email = email
+
+    prof.nome = nome
+    prof.save()
+    return JsonResponse(_professor_json(prof))
+
+
+@csrf_exempt
+@require_http_methods(['PUT'])
+@_json_erros
+def professor_senha(request, pk):
+    prof = get_object_or_404(Professor, pk=pk)
+    data = _body(request)
+    if data is None:
+        return _erro('Informações inválidas.')
+    atual = str(data.get('senha_atual') or '')
+    nova = str(data.get('nova_senha') or '')
+
+    if not check_password(atual, prof.senha):
+        return _erro('Senha atual incorreta.', 401, 'senha_atual')
+    if len(nova) < 6:
+        return _erro('A nova senha deve ter pelo menos 6 caracteres!', campo='nova_senha')
+    if nova == atual:
+        return _erro('A nova senha deve ser diferente da atual.', campo='nova_senha')
+
+    prof.senha = make_password(nova)
+    prof.save()
+    return JsonResponse({'ok': True})
+
+
 # LOGIN
 @csrf_exempt
 @require_http_methods(['POST'])
