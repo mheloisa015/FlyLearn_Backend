@@ -1,4 +1,60 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.Python
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Variaveis de ambiente e segredos locais
+.env
+.env.*
+!.env.example
+
+# Django e bancos de dados locais
+*.sqlite3
+*.sqlite3-journal
 media/
+staticfiles/
+static_root/
+
+# Caches de testes, cobertura e verificadores de tipos
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Compilacao e empacotamento
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Registros
+*.log
+
+# Dependencias do frontend e registros dos gerenciadores de pacotes
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Arquivos de IDE e editores
+.idea/
+.vscode/*
+!.vscode/.gitkeep
+*.code-workspace
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
