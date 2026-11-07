@@ -41,11 +41,20 @@ def _body(request):
 
 
 def _professor_id(request, data=None):
-    bruto = (data or {}).get('professor_id') or request.GET.get('professor_id')
-    try:
-        return int(bruto)
-    except (TypeError, ValueError):
-        return 1
+    professor = _professor_atual(request)
+    return professor.id if professor else None
+
+
+def _professor_atual(request):
+    professor_id = request.session.get('professor_id')
+    if not professor_id:
+        return None
+    return Professor.objects.filter(pk=professor_id, ativo=True).first()
+
+
+def _exigir_professor(request):
+    professor = _professor_atual(request)
+    return professor, None if professor else _erro('É necessário estar autenticado.', 401)
 def _json_erros(view):
     """Se a view quebrar (ex.: coluna inexistente no banco), devolve JSON com o motivo
     em vez de uma página 500 sem informação."""
@@ -125,7 +134,12 @@ def _professor_json(prof):
 @require_http_methods(['GET', 'PUT'])
 @_json_erros
 def professor_detalhe(request, pk):
-    prof = get_object_or_404(Professor, pk=pk)
+    atual, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    if int(pk) != atual.id:
+        return _erro('Professor não encontrado.', 404)
+    prof = atual
     if request.method == 'GET':
         return JsonResponse(_professor_json(prof))
 
@@ -159,7 +173,12 @@ def professor_detalhe(request, pk):
 @require_http_methods(['PUT'])
 @_json_erros
 def professor_senha(request, pk):
-    prof = get_object_or_404(Professor, pk=pk)
+    atual, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    if int(pk) != atual.id:
+        return _erro('Professor não encontrado.', 404)
+    prof = atual
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
@@ -196,7 +215,23 @@ def login(request):
         return _erro('E-mail ou senha incorretos.', 401)
     if not prof.ativo:
         return _erro('Esta conta está desativada.', 403)
+    request.session.cycle_key()
+    request.session['professor_id'] = prof.id
     return JsonResponse(prof.to_dict())
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def logout(request):
+    request.session.flush()
+    return JsonResponse({'ok': True})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def logout(request):
+    request.session.flush()
+    return JsonResponse({'ok': True})
 
 MSG_LINK_INVALIDO = 'Link inválido ou expirado. Solicite um novo.'
 
@@ -257,11 +292,11 @@ def redefinir_senha(request):
 def turmas(request, turma_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
+	prof, erro = _exigir_professor(request)
+	if erro:
+		return erro
 	if request.method == 'GET':
-		ts, als = Turma.objects.all(), Aluno.objects.all()
-		pid = request.GET.get('professor_id')
-		if pid and pid.isdigit():
-			ts, als = ts.filter(professor_id=pid), als.filter(turma__professor_id=pid)
+		ts, als = Turma.objects.filter(professor_id=prof.id), Aluno.objects.filter(turma__professor_id=prof.id)
 		return resposta(request, {'turmas': [turma_json(t) for t in ts], 'alunos': [aluno_json(a) for a in als]})
 	if request.method == 'POST':
 		try:
@@ -270,14 +305,12 @@ def turmas(request, turma_id=None):
 			disciplina = str(body.get('disciplina', '')).strip()
 			if not 1 <= ano <= 12 or not disciplina:
 				return resposta(request, {'erro': 'Ano e disciplina são obrigatórios.'}, 400)
-			pid = body.get('professor_id')
-			prof_id = int(pid) if str(pid).isdigit() and Professor.objects.filter(pk=int(pid)).exists() else None
-			turma = Turma.objects.create(professor_id=prof_id, ano=ano, disciplina=disciplina)
+			turma = Turma.objects.create(professor_id=prof.id, ano=ano, disciplina=disciplina)
 		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
 			return resposta(request, {'erro': 'Essa turma já está cadastrada ou possui dados inválidos.'}, 400)
 		return resposta(request, turma_json(turma), 201)
 	try:
-		turma = Turma.objects.get(pk=turma_id)
+		turma = Turma.objects.get(pk=turma_id, professor_id=prof.id)
 	except Turma.DoesNotExist:
 		return resposta(request, {'erro': 'Turma não encontrada.'}, 404)
 	if request.method == 'DELETE':
@@ -301,10 +334,13 @@ def turmas(request, turma_id=None):
 def alunos(request, aluno_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
+	prof, erro = _exigir_professor(request)
+	if erro:
+		return erro
 	if request.method == 'POST':
 		try:
 			body = dados(request)
-			turma = Turma.objects.get(pk=int(body.get('turma_id', 0)))
+			turma = Turma.objects.get(pk=int(body.get('turma_id', 0)), professor_id=prof.id)
 			nome = str(body.get('nome', '')).strip()
 			ra = str(body.get('ra', '')).strip()
 			if not nome or not ra:
@@ -314,7 +350,7 @@ def alunos(request, aluno_id=None):
 			return resposta(request, {'erro': 'Aluno inválido ou RA já cadastrado nesta turma.'}, 400)
 		return resposta(request, aluno_json(aluno), 201)
 	try:
-		aluno = Aluno.objects.get(pk=aluno_id)
+		aluno = Aluno.objects.get(pk=aluno_id, turma__professor_id=prof.id)
 	except Aluno.DoesNotExist:
 		return resposta(request, {'erro': 'Aluno não encontrado.'}, 404)
 	if request.method == 'DELETE':
@@ -322,7 +358,10 @@ def alunos(request, aluno_id=None):
 		return resposta(request, {})
 	try:
 		body = dados(request)
-		aluno.turma_id = int(body.get('turma_id', aluno.turma_id))
+		aluno.turma_id = Turma.objects.get(
+			pk=int(body.get('turma_id', aluno.turma_id)),
+			professor_id=prof.id,
+		).id
 		aluno.nome = str(body.get('nome', aluno.nome)).strip()
 		aluno.ra = str(body.get('ra', aluno.ra)).strip()
 		aluno.email = str(body.get('email', aluno.email)).strip()
@@ -338,11 +377,11 @@ def alunos(request, aluno_id=None):
 def materias(request, materia_id=None):
 	if request.method == 'OPTIONS':
 		return resposta(request, {})
+	prof, erro = _exigir_professor(request)
+	if erro:
+		return erro
 	if request.method == 'GET':
-		qs = Materia.objects.all().order_by('nome')
-		pid = request.GET.get('professor_id')
-		if pid and pid.isdigit():
-			qs = qs.filter(professor_id=pid)
+		qs = Materia.objects.filter(professor_id=prof.id).order_by('nome')
 		return resposta(request, [materia_json(m) for m in qs])
 	if request.method == 'POST':
 		try:
@@ -350,14 +389,12 @@ def materias(request, materia_id=None):
 			nome = str(body.get('nome', '')).strip()
 			if not nome:
 				return resposta(request, {'erro': 'Nome da matéria é obrigatório.'}, 400)
-			pid = body.get('professor_id')
-			prof_id = int(pid) if str(pid).isdigit() and Professor.objects.filter(pk=int(pid)).exists() else None
-			materia = Materia.objects.create(professor_id=prof_id, nome=nome, descricao=str(body.get('descricao', '')).strip())
+			materia = Materia.objects.create(professor_id=prof.id, nome=nome, descricao=str(body.get('descricao', '')).strip())
 		except (ValueError, TypeError, json.JSONDecodeError, IntegrityError):
 			return resposta(request, {'erro': 'Essa matéria já está cadastrada ou possui dados inválidos.'}, 400)
 		return resposta(request, materia_json(materia), 201)
 	try:
-		materia = Materia.objects.get(pk=materia_id)
+		materia = Materia.objects.get(pk=materia_id, professor_id=prof.id)
 	except Materia.DoesNotExist:
 		return resposta(request, {'erro': 'Matéria não encontrada.'}, 404)
 	if request.method == 'DELETE':
@@ -389,8 +426,11 @@ def _validar_alts(alts):
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def questoes(request):
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
     if request.method == 'GET':
-        qs = Questao.objects.all()
+        qs = Questao.objects.filter(materia__professor_id=prof.id)
         materia_id = request.GET.get('materia_id')
         ativo = request.GET.get('ativo')
         if materia_id:
@@ -404,7 +444,7 @@ def questoes(request):
     enunciado = str(data.get('enunciado') or '').strip()
     materia_id = data.get('materia_id')
     alts = data.get('alts') or []
-    if not materia_id or not Materia.objects.filter(pk=materia_id).exists():
+    if not materia_id or not Materia.objects.filter(pk=materia_id, professor_id=prof.id).exists():
         return _erro('Escolha uma matéria válida.', campo='materia_id')
     if not enunciado:
         return _erro('Escreva o enunciado.', campo='enunciado')
@@ -421,7 +461,10 @@ def questoes(request):
 @csrf_exempt
 @require_http_methods(['PATCH', 'DELETE'])
 def questao_detalhe(request, pk):
-    q = get_object_or_404(Questao, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    q = get_object_or_404(Questao, pk=pk, materia__professor_id=prof.id)
     em_uso = ProvaQuestao.objects.filter(questao_id=pk).exists()
 
     if request.method == 'DELETE':
@@ -475,8 +518,11 @@ def _gerar_versao(prova, qids, embaralhar_questoes=True):
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def provas(request):
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
     if request.method == 'GET':
-        qs = Prova.objects.filter(professor_id=_professor_id(request)).order_by('-id')
+        qs = Prova.objects.filter(professor_id=prof.id).order_by('-id')
         return JsonResponse([p.to_dict() for p in qs], safe=False)
     data = _body(request)
     if data is None:
@@ -488,19 +534,21 @@ def provas(request):
     emb_q = bool(data.get('embaralhar_questoes', True))
     if not nome:
         return _erro('Dê um nome à prova.', campo='nome')
-    if not materia_id or not Materia.objects.filter(pk=materia_id).exists():
+    if not materia_id or not Materia.objects.filter(pk=materia_id, professor_id=prof.id).exists():
         return _erro('Cadastre uma matéria antes.', campo='materia_id')
     if not qids:
         return _erro('Escolha pelo menos uma questão.')
     if len(set(qids)) not in QUANTIDADES_PROVA:
         return _erro('A prova deve ter exatamente 10 ou 20 questões (a folha de respostas existe nesses dois modelos).')
-    ativas = set(Questao.objects.filter(pk__in=qids, materia_id=materia_id, ativo=True).values_list('id', flat=True))
+    ativas = set(Questao.objects.filter(
+        pk__in=qids, materia_id=materia_id, materia__professor_id=prof.id, ativo=True
+    ).values_list('id', flat=True))
     if len(ativas) != len(set(qids)):
         return _erro('Uma ou mais questões escolhidas não existem ou não estão ativas nesta matéria.')
     if not (1 <= n_versoes <= 10):
         return _erro('Informe de 1 a 10 versões.')
 
-    prova = Prova.objects.create(professor_id=_professor_id(request, data), materia_id=materia_id,
+    prova = Prova.objects.create(professor_id=prof.id, materia_id=materia_id,
                                   nome=nome, descricao=str(data.get('descricao') or '').strip())
     versoes = [_gerar_versao(prova, qids, emb_q) for _ in range(n_versoes)]
 
@@ -512,7 +560,10 @@ def provas(request):
 @csrf_exempt
 @require_http_methods(['GET', 'DELETE'])
 def prova_detalhe(request, pk):
-    p = get_object_or_404(Prova, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    p = get_object_or_404(Prova, pk=pk, professor_id=prof.id)
     if request.method == 'GET':
         return JsonResponse(p.to_dict())
     if Avaliacao.objects.filter(versao_prova__prova_id=pk).exists():
@@ -526,7 +577,10 @@ def prova_detalhe(request, pk):
 @require_http_methods(['POST'])
 def gerar_versoes(request, pk):
     """Nova(s) versão(ões) para uma prova já existente, com as mesmas questões da última versão."""
-    prova = get_object_or_404(Prova, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    prova = get_object_or_404(Prova, pk=pk, professor_id=prof.id)
     data = _body(request) or {}
     ultima = prova.versoes.order_by('-id').first()
     if not ultima:
@@ -541,7 +595,10 @@ def gerar_versoes(request, pk):
 
 @require_http_methods(['GET'])
 def versao_detalhe(request, pk):
-    v = get_object_or_404(VersaoProva, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    v = get_object_or_404(VersaoProva, pk=pk, prova__professor_id=prof.id)
     return JsonResponse(v.to_dict())
 
 
@@ -579,14 +636,22 @@ def _versao_completa_json(v):
 def versao_completa(request, pk):
     """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
     (não só os ids), mais a letra da alternativa correta de cada questão."""
-    return JsonResponse(_versao_completa_json(get_object_or_404(VersaoProva, pk=pk)))
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    return JsonResponse(_versao_completa_json(get_object_or_404(
+        VersaoProva, pk=pk, prova__professor_id=prof.id
+    )))
 
 
 @require_http_methods(['GET'])
 def versao_qr(request, pk):
     """PNG do QR code dessa versão (payload = FL1:<uuid em hex>). O frontend
     coloca essa imagem na folha da prova que ele mesmo imprime."""
-    v = get_object_or_404(VersaoProva, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    v = get_object_or_404(VersaoProva, pk=pk, prova__professor_id=prof.id)
     payload = build_payload(v.uuid)
     png = qr_png_bytes(payload, box_size=6)
     return HttpResponse(png, content_type='image/png')
@@ -624,11 +689,14 @@ def _parse_data_aplicacao(valor):
 @require_http_methods(['POST'])
 @_json_erros
 def aplicar_prova(request, pk):
-    prova = get_object_or_404(Prova, pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    prova = get_object_or_404(Prova, pk=pk, professor_id=prof.id)
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
-    turma = Turma.objects.filter(pk=data.get('turma_id') or 0).first()
+    turma = Turma.objects.filter(pk=data.get('turma_id') or 0, professor_id=prof.id).first()
     if not turma:
         return _erro('Escolha uma turma válida.', campo='turma_id')
     versoes = list(prova.versoes.order_by('id'))
@@ -670,10 +738,15 @@ def aplicar_prova(request, pk):
 @require_http_methods(['GET'])
 @_json_erros
 def avaliacoes(request):
-    qs = Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova')
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    qs = Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova').filter(
+        versao_prova__prova__professor_id=prof.id
+    )
     for param, campo in (('versao_prova_id', 'versao_prova_id'), ('aluno_id', 'aluno_id'),
                          ('turma_id', 'aluno__turma_id'), ('prova_id', 'versao_prova__prova_id'),
-                         ('professor_id', 'versao_prova__prova__professor_id'), ('status', 'status')):
+                         ('status', 'status')):
         valor = request.GET.get(param)
         if valor:
             qs = qs.filter(**{campo: valor})
@@ -684,7 +757,13 @@ def avaliacoes(request):
 @require_http_methods(['GET', 'DELETE'])
 @_json_erros
 def avaliacao_detalhe(request, pk):
-    av = get_object_or_404(Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'), pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    av = get_object_or_404(
+        Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'),
+        pk=pk, versao_prova__prova__professor_id=prof.id
+    )
     if request.method == 'DELETE':
         av.delete()
         return JsonResponse({'ok': True})
@@ -695,7 +774,13 @@ def avaliacao_detalhe(request, pk):
 @require_http_methods(['POST'])
 @_json_erros
 def salvar_resultado(request, pk):
-    av = get_object_or_404(Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'), pk=pk)
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    av = get_object_or_404(
+        Avaliacao.objects.select_related('aluno__turma', 'versao_prova__prova'),
+        pk=pk, versao_prova__prova__professor_id=prof.id
+    )
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
