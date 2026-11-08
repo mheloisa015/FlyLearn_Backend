@@ -430,7 +430,7 @@ def questoes(request):
     if erro:
         return erro
     if request.method == 'GET':
-        qs = Questao.objects.filter(materia__professor_id=prof.id)
+        qs = Questao.objects.filter(professor_id=prof.id)
         materia_id = request.GET.get('materia_id')
         ativo = request.GET.get('ativo')
         if materia_id:
@@ -451,7 +451,7 @@ def questoes(request):
     erro_alts = _validar_alts(alts)
     if erro_alts:
         return _erro(erro_alts)
-    q = Questao.objects.create(materia_id=materia_id, enunciado=enunciado, ativo=bool(data.get('ativo', True)))
+    q = Questao.objects.create(professor_id=prof.id, materia_id=materia_id, enunciado=enunciado, ativo=bool(data.get('ativo', True)))
     for i, a in enumerate(alts, start=1):
         Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
                                     correta=bool(a.get('correta')))
@@ -464,7 +464,7 @@ def questao_detalhe(request, pk):
     prof, erro = _exigir_professor(request)
     if erro:
         return erro
-    q = get_object_or_404(Questao, pk=pk, materia__professor_id=prof.id)
+    q = get_object_or_404(Questao, pk=pk, professor_id=prof.id)
     em_uso = ProvaQuestao.objects.filter(questao_id=pk).exists()
 
     if request.method == 'DELETE':
@@ -487,7 +487,9 @@ def questao_detalhe(request, pk):
             Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
                                         correta=bool(a.get('correta')))
     if 'materia_id' in data:
-        q.materia_id = data['materia_id']
+    	if not Materia.objects.filter(pk=data['materia_id'], professor_id=prof.id).exists():
+        	return _erro('Escolha uma matéria válida.', campo='materia_id')
+    	q.materia_id = data['materia_id']
     if 'enunciado' in data:
         enunciado = str(data['enunciado']).strip()
         if not enunciado:
@@ -541,8 +543,8 @@ def provas(request):
     if len(set(qids)) not in QUANTIDADES_PROVA:
         return _erro('A prova deve ter exatamente 10 ou 20 questões (a folha de respostas existe nesses dois modelos).')
     ativas = set(Questao.objects.filter(
-        pk__in=qids, materia_id=materia_id, materia__professor_id=prof.id, ativo=True
-    ).values_list('id', flat=True))
+    	pk__in=qids, materia_id=materia_id, professor_id=prof.id, ativo=True
+	).values_list('id', flat=True))
     if len(ativas) != len(set(qids)):
         return _erro('Uma ou mais questões escolhidas não existem ou não estão ativas nesta matéria.')
     if not (1 <= n_versoes <= 10):
