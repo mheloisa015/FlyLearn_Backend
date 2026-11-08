@@ -70,7 +70,8 @@ class Aluno(models.Model):
         return self.nome
 
 class Questao(models.Model):
-    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='questoes',null=True)
+    professor = models.ForeignKey(Professor, on_delete=models.CASCADE, db_column='professor_id', related_name='questoes', null=True)
+    materia = models.ForeignKey(Materia, on_delete=models.CASCADE, db_column='materia_id', related_name='questoes', null=True)
     enunciado = models.TextField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
