@@ -482,10 +482,23 @@ def questao_detalhe(request, pk):
             return _erro(erro_alts)
         if em_uso and len(data['alts']) < q.alternativas.count():
             return _erro('Questão já usada em prova: não é possível remover alternativas.')
-        q.alternativas.all().delete()
-        for i, a in enumerate(data['alts'], start=1):
-            Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
-                                        correta=bool(a.get('correta')))
+        existentes = {a.id: a for a in q.alternativas.all()}
+		ids_enviados = {a.get('id') for a in data['alts'] if a.get('id') in existentes}
+		if em_uso and set(existentes) - ids_enviados:
+		    return _erro('Questão já usada em prova: não é possível remover alternativas.')
+		for alt_id, alt in existentes.items():
+		    if alt_id not in ids_enviados:
+		        alt.delete()
+		for i, a in enumerate(data['alts'], start=1):
+		    alt = existentes.get(a.get('id'))
+		    if alt:
+		        alt.texto = str(a['texto']).strip()
+		        alt.ordem_original = i
+		        alt.correta = bool(a.get('correta'))
+		        alt.save()
+		    else:
+		        Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
+		                                    correta=bool(a.get('correta')))
     if 'materia_id' in data:
     	if not Materia.objects.filter(pk=data['materia_id'], professor_id=prof.id).exists():
         	return _erro('Escolha uma matéria válida.', campo='materia_id')
