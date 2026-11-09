@@ -476,44 +476,54 @@ def questao_detalhe(request, pk):
     data = _body(request)
     if data is None:
         return _erro('Informações inválidas.')
+
     if 'alts' in data:
         erro_alts = _validar_alts(data['alts'])
         if erro_alts:
             return _erro(erro_alts)
-        if em_uso and len(data['alts']) < q.alternativas.count():
-            return _erro('Questão já usada em prova: não é possível remover alternativas.')
+
+        # atualiza no lugar (mantém o id) para só reordenar sem perder gabarito/respostas
         existentes = {a.id: a for a in q.alternativas.all()}
-		ids_enviados = {a.get('id') for a in data['alts'] if a.get('id') in existentes}
-		if em_uso and set(existentes) - ids_enviados:
-		    return _erro('Questão já usada em prova: não é possível remover alternativas.')
-		for alt_id, alt in existentes.items():
-		    if alt_id not in ids_enviados:
-		        alt.delete()
-		for i, a in enumerate(data['alts'], start=1):
-		    alt = existentes.get(a.get('id'))
-		    if alt:
-		        alt.texto = str(a['texto']).strip()
-		        alt.ordem_original = i
-		        alt.correta = bool(a.get('correta'))
-		        alt.save()
-		    else:
-		        Alternativa.objects.create(questao=q, texto=str(a['texto']).strip(), ordem_original=i,
-		                                    correta=bool(a.get('correta')))
+        ids_enviados = {a.get('id') for a in data['alts'] if a.get('id') in existentes}
+
+        if em_uso and set(existentes) - ids_enviados:
+            return _erro('Questão já usada em prova: não é possível remover alternativas.')
+
+        for alt_id, alt in existentes.items():
+            if alt_id not in ids_enviados:
+                alt.delete()
+
+        for i, a in enumerate(data['alts'], start=1):
+            alt = existentes.get(a.get('id'))
+            if alt:
+                alt.texto = str(a['texto']).strip()
+                alt.ordem_original = i
+                alt.correta = bool(a.get('correta'))
+                alt.save()
+            else:
+                Alternativa.objects.create(
+                    questao=q,
+                    texto=str(a['texto']).strip(),
+                    ordem_original=i,
+                    correta=bool(a.get('correta')),
+                )
+
     if 'materia_id' in data:
-    	if not Materia.objects.filter(pk=data['materia_id'], professor_id=prof.id).exists():
-        	return _erro('Escolha uma matéria válida.', campo='materia_id')
-    	q.materia_id = data['materia_id']
+        if not Materia.objects.filter(pk=data['materia_id'], professor_id=prof.id).exists():
+            return _erro('Escolha uma matéria válida.', campo='materia_id')
+        q.materia_id = data['materia_id']
+
     if 'enunciado' in data:
         enunciado = str(data['enunciado']).strip()
         if not enunciado:
             return _erro('Escreva o enunciado.', campo='enunciado')
         q.enunciado = enunciado
+
     if 'ativo' in data:
         q.ativo = bool(data['ativo'])
+
     q.save()
     return JsonResponse(q.to_dict())
-
-
 
 #PROVAS - GERAR VERSÃO
 def _gerar_versao(prova, qids, embaralhar_questoes=True):
