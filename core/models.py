@@ -157,12 +157,19 @@ class ProvaQuestao(models.Model):
     versao_prova = models.ForeignKey(VersaoProva, on_delete=models.CASCADE, db_column='versao_prova_id', related_name='itens', null=True)
     questao = models.ForeignKey(Questao, on_delete=models.CASCADE, db_column='questao_id', null=True)
     ordem = models.IntegerField(null=True, blank=True)
+    # ids das alternativas na ordem desta versão, ex.: "14,12,15,11,13" (NULL = ordem cadastrada)
     ordem_alternativas = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'prova_questao'
         managed = False
         ordering = ['ordem']
+
+    def to_dict(self, alternativa_correta_id=None):
+        return {
+            'id': self.id, 'versao_prova_id': self.versao_prova_id, 'questao_id': self.questao_id,
+            'ordem': self.ordem, 'alternativa_correta_id': alternativa_correta_id,
+        }
 
 
 class Gabarito(models.Model):
