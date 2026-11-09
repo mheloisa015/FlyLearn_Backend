@@ -624,8 +624,14 @@ def prova_detalhe(request, pk):
         return JsonResponse(p.to_dict())
     if Avaliacao.objects.filter(versao_prova__prova_id=pk).exists():
         return _erro('Esta prova já foi aplicada a alunos e não pode ser excluída.')
-    VersaoProva.objects.filter(prova_id=pk).delete()
-    p.delete()
+    from django.db import connection
+    sub = "SELECT id FROM versao_prova WHERE prova_id = %s"
+    with transaction.atomic():
+        with connection.cursor() as cur:
+            cur.execute("DELETE FROM gabarito WHERE versao_prova_id IN (" + sub + ")", [pk])
+            cur.execute("DELETE FROM prova_questao WHERE versao_prova_id IN (" + sub + ")", [pk])
+            cur.execute("DELETE FROM versao_prova WHERE prova_id = %s", [pk])
+        p.delete()
     return JsonResponse({'ok': True})
 
 #GERAR VERSÕES
