@@ -425,6 +425,7 @@ def _validar_alts(alts):
 #QUESTÕES
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
+@_json_erros
 def questoes(request):
     prof, erro = _exigir_professor(request)
     if erro:
@@ -460,6 +461,7 @@ def questoes(request):
 
 @csrf_exempt
 @require_http_methods(['PATCH', 'DELETE'])
+@_json_erros
 def questao_detalhe(request, pk):
     prof, erro = _exigir_professor(request)
     if erro:
@@ -525,15 +527,41 @@ def questao_detalhe(request, pk):
     q.save()
     return JsonResponse(q.to_dict())
 
+
+
 #PROVAS - GERAR VERSÃO
-def _gerar_versao(prova, qids, embaralhar_questoes=True):
+def _alternativas_do_item(item):
+    """Alternativas da questão na ordem em que saem NESTA versão da prova.
+    Se a versão não guardou ordem (provas antigas), usa a ordem cadastrada na questão."""
+    q = item.questao
+    if not q:
+        return []
+    alts = list(q.alternativas.order_by('ordem_original'))
+    if item.ordem_alternativas:
+        try:
+            ordem = [int(x) for x in item.ordem_alternativas.split(',') if x.strip()]
+        except ValueError:
+            return alts
+        por_id = {a.id: a for a in alts}
+        if set(ordem) == set(por_id) and len(ordem) == len(por_id):
+            return [por_id[i] for i in ordem]
+    return alts
+
+
+def _gerar_versao(prova, qids, embaralhar_questoes=True, embaralhar_alternativas=False):
     ordem_q = list(qids)
     if embaralhar_questoes:
         random.shuffle(ordem_q)
     codigo = 'V-' + uuid_lib.uuid4().hex[:4].upper()
     versao = VersaoProva.objects.create(prova=prova, uuid=uuid_lib.uuid4(), codigo=codigo)
     for i, qid in enumerate(ordem_q, start=1):
-        pq = ProvaQuestao.objects.create(versao_prova=versao, questao_id=qid, ordem=i)
+        ids_alts = list(Alternativa.objects.filter(questao_id=qid).order_by('ordem_original').values_list('id', flat=True))
+        if embaralhar_alternativas:
+            random.shuffle(ids_alts)
+        pq = ProvaQuestao.objects.create(
+            versao_prova=versao, questao_id=qid, ordem=i,
+            ordem_alternativas=','.join(str(x) for x in ids_alts),
+        )
         correta = Alternativa.objects.filter(questao_id=qid, correta=True).first()
         if correta:
             Gabarito.objects.create(versao_prova=versao, prova_questao=pq, alternativa=correta)
@@ -542,6 +570,7 @@ def _gerar_versao(prova, qids, embaralhar_questoes=True):
 #PROVAS
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
+@_json_erros
 def provas(request):
     prof, erro = _exigir_professor(request)
     if erro:
@@ -557,6 +586,7 @@ def provas(request):
     qids = data.get('qids') or []
     n_versoes = int(data.get('n_versoes') or 1)
     emb_q = bool(data.get('embaralhar_questoes', True))
+    emb_a = bool(data.get('embaralhar_alternativas', False))
     if not nome:
         return _erro('Dê um nome à prova.', campo='nome')
     if not materia_id or not Materia.objects.filter(pk=materia_id, professor_id=prof.id).exists():
@@ -566,8 +596,8 @@ def provas(request):
     if len(set(qids)) not in QUANTIDADES_PROVA:
         return _erro('A prova deve ter exatamente 10 ou 20 questões (a folha de respostas existe nesses dois modelos).')
     ativas = set(Questao.objects.filter(
-    	pk__in=qids, materia_id=materia_id, professor_id=prof.id, ativo=True
-	).values_list('id', flat=True))
+        pk__in=qids, materia_id=materia_id, professor_id=prof.id, ativo=True
+    ).values_list('id', flat=True))
     if len(ativas) != len(set(qids)):
         return _erro('Uma ou mais questões escolhidas não existem ou não estão ativas nesta matéria.')
     if not (1 <= n_versoes <= 10):
@@ -575,7 +605,7 @@ def provas(request):
 
     prova = Prova.objects.create(professor_id=prof.id, materia_id=materia_id,
                                   nome=nome, descricao=str(data.get('descricao') or '').strip())
-    versoes = [_gerar_versao(prova, qids, emb_q) for _ in range(n_versoes)]
+    versoes = [_gerar_versao(prova, qids, emb_q, emb_a) for _ in range(n_versoes)]
 
     resposta = prova.to_dict()
     resposta['versoes'] = [v.to_dict() for v in versoes]
@@ -584,6 +614,7 @@ def provas(request):
 
 @csrf_exempt
 @require_http_methods(['GET', 'DELETE'])
+@_json_erros
 def prova_detalhe(request, pk):
     prof, erro = _exigir_professor(request)
     if erro:
@@ -600,6 +631,7 @@ def prova_detalhe(request, pk):
 #GERAR VERSÕES
 @csrf_exempt
 @require_http_methods(['POST'])
+@_json_erros
 def gerar_versoes(request, pk):
     """Nova(s) versão(ões) para uma prova já existente, com as mesmas questões da última versão."""
     prof, erro = _exigir_professor(request)
@@ -614,11 +646,14 @@ def gerar_versoes(request, pk):
     n_versoes = int(data.get('n_versoes') or 1)
     if not (1 <= n_versoes <= 10):
         return _erro('Informe de 1 a 10 versões.')
-    versoes = [_gerar_versao(prova, qids, bool(data.get('embaralhar_questoes', True))) for _ in range(n_versoes)]
+    emb_q = bool(data.get('embaralhar_questoes', True))
+    emb_a = bool(data.get('embaralhar_alternativas', False))
+    versoes = [_gerar_versao(prova, qids, emb_q, emb_a) for _ in range(n_versoes)]
     return JsonResponse([v.to_dict() for v in versoes], safe=False, status=201)
 
 
 @require_http_methods(['GET'])
+@_json_erros
 def versao_detalhe(request, pk):
     prof, erro = _exigir_professor(request)
     if erro:
@@ -636,7 +671,7 @@ def _versao_completa_json(v):
     itens = []
     for it in v.itens.select_related('questao').order_by('ordem'):
         q = it.questao
-        alts = list(q.alternativas.order_by('ordem_original')) if q else []
+        alts = _alternativas_do_item(it)
         alt_correta_id = gabarito_por_pq.get(it.id)
         correta_letra = None
         for i, a in enumerate(alts):
@@ -658,6 +693,7 @@ def _versao_completa_json(v):
 
 
 @require_http_methods(['GET'])
+@_json_erros
 def versao_completa(request, pk):
     """Versão pronta pra imprimir: texto da prova, das questões e das alternativas
     (não só os ids), mais a letra da alternativa correta de cada questão."""
@@ -670,6 +706,7 @@ def versao_completa(request, pk):
 
 
 @require_http_methods(['GET'])
+@_json_erros
 def versao_qr(request, pk):
     """PNG do QR code dessa versão (payload = FL1:<uuid em hex>). O frontend
     coloca essa imagem na folha da prova que ele mesmo imprime."""
@@ -832,7 +869,7 @@ def salvar_resultado(request, pk):
         acertos = 0
         for item, letra in zip(itens, letras):
             letra = str(letra or '').strip().upper()
-            alts = list(item.questao.alternativas.order_by('ordem_original'))   # mesma ordem de versao_completa
+            alts = _alternativas_do_item(item)   # mesma ordem de versao_completa
             # len(letra) == 1: sem isso '' e 'BC' passariam em `in 'ABCDE'` (substring) e virariam A/B
             idx = LETRAS.index(letra) if len(letra) == 1 and letra in LETRAS else None
             marcada = alts[idx] if idx is not None and idx < len(alts) else None
