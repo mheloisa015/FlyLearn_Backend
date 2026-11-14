@@ -14,6 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db import transaction
+from django.db.models import Count, Q
 
 from .models import (
     Aluno, Alternativa, Avaliacao, Gabarito, Materia, Prova, ProvaQuestao,
@@ -890,3 +891,39 @@ def salvar_resultado(request, pk):
     corpo = av.to_dict(com_respostas=False)
     corpo.update({'acertos': acertos, 'total': len(itens)})
     return JsonResponse(corpo)
+
+
+# APROVEITAMENTO POR MATÉRIA (painel do dashboard)
+# % de acertos = respostas corretas / respostas lançadas, nas avaliações já corrigidas.
+# Filtros opcionais: ?turma_id=
+@require_http_methods(['GET'])
+@_json_erros
+def desempenho(request):
+    prof, erro = _exigir_professor(request)
+    if erro:
+        return erro
+    qs = Resposta.objects.filter(
+        avaliacao__status='corrigida',
+        avaliacao__versao_prova__prova__professor_id=prof.id,
+    )
+    turma_id = request.GET.get('turma_id')
+    if turma_id:
+        qs = qs.filter(avaliacao__aluno__turma_id=turma_id)
+    linhas = (qs.values('avaliacao__versao_prova__prova__materia_id',
+                        'avaliacao__versao_prova__prova__materia__nome')
+                .annotate(total=Count('id'),
+                          acertos=Count('id', filter=Q(correta=True)),
+                          avaliacoes=Count('avaliacao_id', distinct=True)))
+    materias = []
+    for l in linhas:
+        total = l['total']
+        materias.append({
+            'materia_id': l['avaliacao__versao_prova__prova__materia_id'],
+            'nome': l['avaliacao__versao_prova__prova__materia__nome'] or 'Sem matéria',
+            'acertos': l['acertos'],
+            'total': total,
+            'avaliacoes': l['avaliacoes'],
+            'percentual': round(l['acertos'] * 100.0 / total) if total else 0,
+        })
+    materias.sort(key=lambda m: (-m['percentual'], m['nome']))
+    return JsonResponse({'materias': materias})
